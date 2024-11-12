@@ -1,8 +1,7 @@
 #![allow(non_snake_case)]
 use dioxus::prelude::*;
 use homedir::my_home;
-use std::path::PathBuf;
-use std::sync::LazyLock;
+use std::{path::PathBuf, sync::{LazyLock, Arc}};
 use tokio::process::Command;
 
 static DOC_DIR: LazyLock<PathBuf> = LazyLock::new(|| { my_home().expect("Failed to get user home directory").unwrap().join("Documents") });
@@ -91,9 +90,9 @@ impl Files {
     }
 }
 
-async fn marktext(filename: &str) {
+async fn marktext(filename: Arc<String>) {
     Command::new("/apps/marktext")
-        .arg(filename)
+        .arg(filename.as_str())
         .output()
         .await
 	.expect("Failed to start marktext");
@@ -129,9 +128,9 @@ pub fn FileExplorer() -> Element {
             for (_index, file_path) in files.read().mdfiles.clone().into_iter().enumerate() {
                 button {
                     onclick: move |_| {
-                        let filepath = file_path.to_str().expect("File name cannot be unwrapped").to_owned();
+                        let filepath = Arc::new(file_path.to_string_lossy().into_owned());
                         let _ = tokio::spawn(async move {
-                            marktext(&filepath).await;
+                            marktext(filepath).await;
                         });
                     },
                     if let Some(file_name) = file_path.file_name().expect("File name cannot be unwrapped").to_str() {
