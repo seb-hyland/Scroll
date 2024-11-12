@@ -1,0 +1,32 @@
+body {
+    background-color: #111216;
+    font-family: "Inter", sans-serif;
+}
+
+div {
+    margin: 0 15px;
+}
+
+button {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    padding: 15px;
+    border-width: 0.5px;
+    border-style: solid none;
+    border-color: grey;
+    background-color: #111216;
+    color: white; /* Optional: Text color */
+    cursor: pointer;
+    transition: background-color 0.3s;
+    font-size: 16px;
+    font-weight: "light";
+}
+
+button:hover {
+    background-color: #2a2a2a; /* Very dark grey */
+}
+
+h1 {
+    color: white; /* Optional: Header color */
+}

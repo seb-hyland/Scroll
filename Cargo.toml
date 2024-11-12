@@ -1,0 +1,12 @@
+[package]
+name = "DocManager"
+version = "0.1.0"
+authors = ["Sebastian Hyland <st.hyland05@gmail.com>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dioxus = { version = "0.6.0-alpha.4", features = ["desktop", "router"] }
+homedir = "0.3.4"
+tokio = { version = "1", features = ["full"] }
