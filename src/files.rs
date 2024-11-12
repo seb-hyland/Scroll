@@ -3,15 +3,15 @@ use dioxus::prelude::*;
 use homedir::my_home;
 use std::{path::PathBuf, sync::{LazyLock, Arc}};
 use tokio::process::Command;
+use rusqlite::{params, Connection, Result};
 
-static DOC_DIR: LazyLock<PathBuf> = LazyLock::new(|| { my_home().expect("Failed to get user home directory").unwrap().join("Documents") });
+static DOC_DIR: LazyLock<PathBuf> = LazyLock::new(|| { my_home().expect("Failed to get user home directory").unwrap().join("Documents/iGEM-2025") });
 
 struct Files {
     current_path: PathBuf,
     path_contents: Vec<PathBuf>,
     directories: Vec<PathBuf>,
-    mdfiles: Vec<PathBuf>,
-    attributes: Vec<Option<String>>,
+    mdfiles: Vec<String>,
     err: Option<String>,
 }
 
@@ -22,7 +22,6 @@ impl Files {
             path_contents: vec![],
 	    directories: vec![],
 	    mdfiles: vec![],
-	    attributes: vec![],
             err: None,
         };
         files.refresh_paths();
@@ -34,13 +33,11 @@ impl Files {
             Ok(entries) => {
                 self.path_contents.clear();
                 self.clear_err();
-
                 for entry in entries {
                     if let Ok(entry) = entry {
                         self.path_contents.push(entry.path());
                     }
                 }
-
 		self.refresh_display();
             }
             Err(err) => {
@@ -52,14 +49,32 @@ impl Files {
     fn refresh_display(&mut self) {
 	self.directories.clear();
 	self.mdfiles.clear();
+        let db_path = PathBuf::from(&self.current_path).join("database.db");
+        let connection: Option<Connection> = match Connection::open(&db_path) {
+            Ok(conn) => Some(conn),
+            Err(_) => None,
+        };
 	for entry in self.path_contents.iter().enumerate() {
 	    let path = entry.1.clone();
 	    if path.is_dir() {
 		self.directories.push(path);
 	    }
 	    else if path.extension().is_some() && path.extension().unwrap() == "md" {
-		self.mdfiles.push(path);
-	    }
+                if let Some(conn) = &connection {
+                    let file_name = path.file_name().unwrap().to_str().unwrap();
+                    let mut file_data: Vec<String> = vec![file_name.to_string().clone()];
+                    let query = "SELECT file_name, attribute_value FROM FileAttributes WHERE file_name = ?";
+                    let mut stmt = conn.prepare(query).expect("Failed to prepare query");
+                    let mut rows = stmt.query(params![file_name]).expect("Failed to execute query");
+                    while let Some(row) = rows.next().expect("Failed to fetch row") {
+                        let attribute_value: String = row.get(1).expect("Failed to get attribute value");
+                        file_data.push(attribute_value);
+                    }
+                    self.mdfiles.push(file_data.join(", "));
+                } else {
+		    self.mdfiles.push(path.to_string_lossy().to_string());
+	        }
+            }
 	}
     }
 
@@ -90,9 +105,9 @@ impl Files {
     }
 }
 
-async fn marktext(filename: Arc<String>) {
+async fn marktext(filename: String) {
     Command::new("/apps/marktext")
-        .arg(filename.as_str())
+        .arg(filename)
         .output()
         .await
 	.expect("Failed to start marktext");
@@ -125,17 +140,15 @@ pub fn FileExplorer() -> Element {
             }
             br {}
             br {}
-            for (_index, file_path) in files.read().mdfiles.clone().into_iter().enumerate() {
+            for (_index, file_data) in files.read().mdfiles.clone().into_iter().enumerate() {
                 button {
                     onclick: move |_| {
-                        let filepath = Arc::new(file_path.to_string_lossy().into_owned());
+                        let filepath = file_data.clone();
                         let _ = tokio::spawn(async move {
                             marktext(filepath).await;
                         });
                     },
-                    if let Some(file_name) = file_path.file_name().expect("File name cannot be unwrapped").to_str() {
-                        "{file_name}"
-                    }
+                    "{file_data}",
                     span {
                         "📝"
                     }
@@ -144,3 +157,4 @@ pub fn FileExplorer() -> Element {
         }
     }
 }
+
