@@ -30,3 +30,30 @@ button:hover {
 h1 {
     color: white; /* Optional: Header color */
 }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed; /* Ensures even column width */
+    color: white; /* White text for both header and body */
+}
+
+th, td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid white; /* White lines separating rows */
+    overflow: hidden; /* Prevents overflow */
+}
+
+th {
+    background-color: #333; /* Dark background for header */
+    font-weight: bold; /* Bold headers */
+}
+
+td {
+    background-color: #444; /* Slightly lighter background for body cells */
+}
+
+tr:hover {
+    background-color: #555; /* Highlight rows on hover */
+}

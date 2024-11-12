@@ -1,9 +1,10 @@
 #![allow(non_snake_case)]
 use dioxus::prelude::*;
 use homedir::my_home;
-use std::{path::PathBuf, sync::{LazyLock, Arc}};
+use std::{path::PathBuf, fs, sync::{LazyLock, Arc}};
 use tokio::process::Command;
 use rusqlite::{params, Connection, Result};
+use serde_json::Value;
 
 static DOC_DIR: LazyLock<PathBuf> = LazyLock::new(|| { my_home().expect("Failed to get user home directory").unwrap().join("Documents/iGEM-2025") });
 
@@ -11,7 +12,8 @@ struct Files {
     current_path: PathBuf,
     path_contents: Vec<PathBuf>,
     directories: Vec<PathBuf>,
-    mdfiles: Vec<String>,
+    mdfiles: Vec<Vec<String>>,
+    attributes: Vec<String>,
     err: Option<String>,
 }
 
@@ -22,6 +24,7 @@ impl Files {
             path_contents: vec![],
 	    directories: vec![],
 	    mdfiles: vec![],
+            attributes: vec![],
             err: None,
         };
         files.refresh_paths();
@@ -49,11 +52,26 @@ impl Files {
     fn refresh_display(&mut self) {
 	self.directories.clear();
 	self.mdfiles.clear();
+        self.attributes.clear();
         let db_path = PathBuf::from(&self.current_path).join("database.db");
         let connection: Option<Connection> = match Connection::open(&db_path) {
             Ok(conn) => Some(conn),
             Err(_) => None,
         };
+        let file_content = match fs::read_to_string(PathBuf::from(&self.current_path).join("attributes.json")) {
+            Ok(json) => Some(json),
+            Err(_) => None,
+        };
+        if file_content.is_some() {
+            let parsed: Value = serde_json::from_str(&file_content.unwrap()).expect("Failed to parse JSON");
+            let mut attr: Vec<String> = vec!["".to_string()];
+            if let Value::Object(obj) = parsed {
+                for key in obj.keys() {
+                    attr.push(key.clone());
+                }
+            }
+            self.attributes = attr;
+        }
 	for entry in self.path_contents.iter().enumerate() {
 	    let path = entry.1.clone();
 	    if path.is_dir() {
@@ -70,9 +88,9 @@ impl Files {
                         let attribute_value: String = row.get(1).expect("Failed to get attribute value");
                         file_data.push(attribute_value);
                     }
-                    self.mdfiles.push(file_data.join(", "));
+                    self.mdfiles.push(file_data);
                 } else {
-		    self.mdfiles.push(path.to_string_lossy().to_string());
+		    self.mdfiles.push(vec![path.to_string_lossy().to_string()]);
 	        }
             }
 	}
@@ -140,21 +158,41 @@ pub fn FileExplorer() -> Element {
             }
             br {}
             br {}
-            for (_index, file_data) in files.read().mdfiles.clone().into_iter().enumerate() {
-                button {
-                    onclick: move |_| {
-                        let filepath = file_data.clone();
-                        let _ = tokio::spawn(async move {
-                            marktext(filepath).await;
-                        });
-                    },
-                    "{file_data}",
-                    span {
-                        "📝"
+            table {
+                thead {
+                    tr {
+                        for attribute_name in files.read().attributes.clone().into_iter() {
+                            th {
+                                "{attribute_name}"
+                            }
+                        }
+                    }
+                }
+                tbody {
+                    for (_index, file_data) in files.read().mdfiles.clone().into_iter().enumerate() {
+                        tr {
+                            td {
+                                button {
+                                    onclick: move |_| {
+                                        let filepath = file_data.get(0).unwrap().clone();
+                                        let _ = tokio::spawn(async move {
+                                            marktext(filepath).await;
+                                        });
+                                    },
+                                    "{file_data.get(0).unwrap()}"
+                                }
+                            }
+                            for attribute in file_data.iter().skip(1) {
+                                td {
+                                    "{attribute}"
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
     }
 }
+
 

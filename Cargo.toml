@@ -10,4 +10,6 @@ edition = "2021"
 dioxus = { version = "0.6.0-alpha.4", features = ["desktop", "router"] }
 homedir = "0.3.4"
 rusqlite = "0.32.1"
+serde = "1.0.215"
+serde_json = "1.0.132"
 tokio = { version = "1", features = ["full"] }
