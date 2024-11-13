@@ -19,8 +19,7 @@ enum Route {
 
 fn main() {
     let cfg = Config::new()
-        .with_window(WindowBuilder::new().with_resizable(true))
-        .with_custom_head(r#"<link rel="stylesheet" href="./assets/main.css"> <style> @import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap'); </style>"#.to_string());
+        .with_window(WindowBuilder::new().with_resizable(true).with_title("DocManager")).with_menu(None);
 
     dioxus::LaunchBuilder::desktop().with_cfg(cfg).launch(App)
 }

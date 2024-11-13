@@ -1,0 +1,4 @@
+* DocManager
+DocManager is a local documentation management and electronic lab notebook (ELN) tool, which relies on local Markdown editing and Git version control rather than online real-time collaboration.
+
+/Note: DocManager is currently in alpha development./

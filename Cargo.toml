@@ -1,14 +1,14 @@
 [package]
 name = "DocManager"
-version = "0.1.0"
+version = "0.2.3"
 authors = ["Sebastian Hyland <st.hyland05@gmail.com>"]
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "A local documentation management and ELN tool"
+homepage = "https://github.com/seb-hyland/DocManager"
 
 [dependencies]
 dioxus = { version = "0.6.0-alpha.4", features = ["desktop", "router"] }
 homedir = "0.3.4"
+indexmap = {version = "2.6.0", features = ["serde"]}
 rusqlite = "0.32.1"
 serde = "1.0.215"
 serde_json = "1.0.132"

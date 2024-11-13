@@ -1,30 +1,11 @@
 body {
     background-color: #111216;
     font-family: "Inter", sans-serif;
+    color: white;
 }
 
 div {
     margin: 0 15px;
-}
-
-button {
-    display: flex;
-    justify-content: space-between;
-    width: 100%;
-    padding: 15px;
-    border-width: 0.5px;
-    border-style: solid none;
-    border-color: grey;
-    background-color: #111216;
-    color: white; /* Optional: Text color */
-    cursor: pointer;
-    transition: background-color 0.3s;
-    font-size: 16px;
-    font-weight: "light";
-}
-
-button:hover {
-    background-color: #2a2a2a; /* Very dark grey */
 }
 
 h1 {
@@ -46,14 +27,21 @@ th, td {
 }
 
 th {
-    background-color: #333; /* Dark background for header */
     font-weight: bold; /* Bold headers */
 }
 
-td {
-    background-color: #444; /* Slightly lighter background for body cells */
+
+a, button {
+    color: white;
+    background-color: #111216;
+    text-decoration: underline;
+    margin-top: 20px;
+    margin: 10px;
+    border: #111216 1px solid;
+    border-radius: 5px;
+    padding: 10px;
 }
 
-tr:hover {
-    background-color: #555; /* Highlight rows on hover */
+button:hover {
+    background-color: #2a2a2a; /* Very dark grey */
 }
