@@ -8,7 +8,6 @@ use std::{
     path::PathBuf,
     sync::LazyLock,
 };
-use tokio::process::Command;
 use indexmap::IndexMap;
 use crate::Route;
 
@@ -21,18 +20,18 @@ pub static DOC_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
 });
 
 #[derive(Clone)]
-struct Files {
-    current_path: PathBuf,
+pub struct FileData {
+    pub current_path: PathBuf,
     path_contents: Vec<PathBuf>,
-    directories: Vec<PathBuf>,
-    metadata: Vec<Vec<String>>,
-    attributes: Vec<(String, String)>,
-    breadcrumbs: Vec<(PathBuf, String)>,
+    pub directories: Vec<PathBuf>,
+    pub metadata: Vec<Vec<String>>,
+    pub attributes: Vec<(String, String)>,
+    pub breadcrumbs: Vec<(PathBuf, String)>,
     err: Option<String>,
 }
 
-impl Files {
-    fn new() -> Self {
+impl FileData {
+    pub fn new() -> Self {
         let mut files = Self {
             current_path: DOC_DIR.clone(),
             path_contents: vec![],
@@ -136,123 +135,15 @@ impl Files {
 	breadcrumbs
     }
 
-    fn back_dir(&mut self) {
-        if let Some(parent) = self.current_path.parent() {
-	    self.current_path = parent.to_path_buf();
-	    self.refresh();
-        } else {
-	    self.err = Some("Cannot go up from the current directory".to_string());
-        }
-    }
-
-    fn enter_dir(&mut self, dir_id: usize) {
-        if let Some(path) = self.get_directories().get(dir_id) {
-	    if path.is_dir() {
-                self.current_path = path.to_path_buf();
-                self.refresh();
-	    }
-        }
-    }
-
-    fn goto(&mut self, path: PathBuf) {
+    pub fn goto(&mut self, path: PathBuf) {
         if path.is_dir() {
 	    self.current_path = path;
 	    self.refresh();
         }
     }
 
-    fn current(&self) -> String {
-        self.current_path.display().to_string()
-    }
-
     fn set_path(&mut self, path: PathBuf) {
         self.current_path = path;
         self.refresh();
-    }
-}
-
-async fn marktext(filename: String) {
-    Command::new("/apps/marktext")
-        .arg(filename)
-        .output()
-        .await
-        .expect("Failed to start marktext");
-}
-
-#[component]
-pub fn FileExplorer(init: PathBuf) -> Element {
-    println!("Current path: {:?}", init);
-    let mut files = use_signal(Files::new);
-    let breadcrumbs = files.read().breadcrumbs.clone();
-    let directories = files.read().directories.clone();
-    let attributes = files.read().attributes.clone();
-    let metadata = files.read().metadata.clone();
-    rsx! {
-	document::Link { rel: "stylesheet", href: asset!("/assets/main.css") }
-	div {
-	    for (i, (path, name)) in breadcrumbs.clone().into_iter().enumerate() {
-		button {
-		    onclick: move |_| files.write().goto(path.clone()),   
-		    "{name}"
-		}
-		if i < breadcrumbs.len() - 1 {
-		    span { " > " }
-		}
-	    }
-            br {}
-            for (index, file_path) in directories.iter().enumerate() {
-                button {
-                    onclick: move |_| files.write().enter_dir(index),
-                    if let Some(dir_name) = file_path.file_name().expect("File name cannot be unwrapped").to_str() {
-                        "{dir_name}"
-                    }
-                    span {
-                        "> "
-                    }
-                }
-            }
-            br {}
-            table {
-                thead {
-                    tr {
-                        if !attributes.is_empty() {
-                            th { "" }
-                        }
-                        for attribute_name in attributes.iter() {
-                            th {
-                                "{attribute_name.0}"
-                            }
-                        }
-                    }
-                }
-                tbody {
-                    for data in metadata.into_iter() {
-                        tr {
-                            td {
-                                button {
-                                    onclick: move |_| {
-                                        let filepath = {
-                                            let mut path = files.read().current_path.clone();
-                                            path.push(data.get(0).unwrap().clone());
-                                            let path_string = path.to_string_lossy().to_string().clone();
-                                            path_string
-                                        };
-                                        let _ = tokio::spawn(async move {
-                                            marktext(filepath).await;
-                                        });
-                                    },
-                                    "{data.get(0).unwrap()}"
-                                }
-                            }
-                            for data_out in data.iter().skip(1) {
-                                td {
-                                    "{data_out}"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
