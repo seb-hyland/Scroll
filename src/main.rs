@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 use dioxus::prelude::*;
 use dioxus::desktop::{Config, WindowBuilder};
+use std::path::PathBuf;
 
 mod files;
 mod home;
@@ -8,12 +9,12 @@ mod home;
 use crate::files::FileExplorer;
 use crate::home::Home;
 
-#[derive(Clone, Routable, Debug, PartialEq)]
+#[derive(Clone, Routable, PartialEq)]
 enum Route {
     #[route("/")]
     Home {},
     #[route("/files")]
-    FileExplorer {},
+    FileExplorer { init: PathBuf },
 }
 
 

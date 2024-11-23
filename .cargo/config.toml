@@ -11,3 +11,6 @@ opt-level = 2
 [profile.dioxus-android]
 inherits = "dev"
 opt-level = 2
+
+[build]
+rustflags = ["-Z", "threads=16"]

@@ -4,12 +4,13 @@ version = "0.2.3"
 authors = ["Sebastian Hyland <st.hyland05@gmail.com>"]
 description = "A local documentation management and ELN tool"
 homepage = "https://github.com/seb-hyland/DocManager"
+edition = "2021"
 
 [dependencies]
 dioxus = { version = "0.6.0-alpha.4", features = ["desktop", "router"] }
 homedir = "0.3.4"
 indexmap = {version = "2.6.0", features = ["serde"]}
 rusqlite = "0.32.1"
-serde = "1.0.215"
+serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.132"
 tokio = { version = "1", features = ["full"] }
