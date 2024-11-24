@@ -1,12 +1,15 @@
 #![allow(non_snake_case)]
 use dioxus::prelude::*;
 use dioxus::desktop::{Config, WindowBuilder};
+use std::path::PathBuf;
 
 mod file_explorer;
 mod home;
 mod files;
+mod new;
 use crate::file_explorer::Viewer;
 use crate::home::Home;
+use crate::new::Creator;
 
 #[derive(Clone, Routable, PartialEq)]
 enum Route {
@@ -14,6 +17,8 @@ enum Route {
     Home {},
     #[route("/files")]
     Viewer { init: String },
+    #[route("/new")]
+    Creator { from: PathBuf, attributes: Vec<(String, String)> }
 }
 
 

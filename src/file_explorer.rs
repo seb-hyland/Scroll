@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 use std::path::PathBuf;
 use tokio::process::Command;
 use crate::files::FileData;
+use crate::Route;
 
 async fn marktext(filename: String) {
     Command::new("/apps/marktext")
@@ -22,17 +23,30 @@ pub fn Viewer(init: String) -> Element {
     rsx! {
 	document::Link { rel: "stylesheet", href: asset!("/assets/main.css") }
 	div {
-	    for (i, (path, name)) in breadcrumbs.clone().into_iter().enumerate() {
-		button {
-		    onclick: move |_| files.write().goto(path.clone()),   
-		    "{name}"
-		}
-		if i < breadcrumbs.len() - 1 {
-		    span { " > " }
-		}
-	    }
+            div {
+                class: "breadcrumbs-container",
+                div {
+                    class: "breadcrumbs",
+                    for (i, (path, name)) in breadcrumbs.clone().into_iter().enumerate() {
+                        button {
+                            onclick: move |_| files.write().goto(path.clone()),   
+                            "{name}"
+                        }
+                        if i < breadcrumbs.len() - 1 {
+                            span { " > " }
+                        }
+                    }
+                }
+                span {
+                    class: "new-button",
+                    Link { 
+                        to: Route::Creator { from: PathBuf::new(), attributes: vec![] },
+                        "+   New"
+                    }
+                }
+            }
             br {}
-            for dir_path in directories.clone().into_iter() {
+            for dir_path in directories.into_iter() {
                 button {
                     onclick: move |_| files.write().goto(dir_path.clone()),
                     if let Some(dir_name) = dir_path.file_name().expect("File name cannot be unwrapped").to_str() {
