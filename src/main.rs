@@ -10,16 +10,19 @@ mod new;
 use crate::file_explorer::Viewer;
 use crate::home::Home;
 use crate::new::Creator;
+use crate::files::FileData;
 
 #[derive(Clone, Routable, PartialEq)]
 enum Route {
     #[route("/")]
     Home {},
     #[route("/files")]
-    Viewer { init: String },
+    Viewer {},
     #[route("/new")]
-    Creator { from: PathBuf, attributes: Vec<(String, String)> }
+    Creator {}
 }
+
+pub static FILE_DATA: GlobalSignal<FileData> = Global::new(|| FileData::new());
 
 
 fn main() {

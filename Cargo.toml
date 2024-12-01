@@ -1,13 +1,14 @@
 [package]
-name = "DocManager"
-version = "0.2.3"
+name = "Scroll"
+version = "0.3.0"
 authors = ["Sebastian Hyland <st.hyland05@gmail.com>"]
 description = "A local documentation management and ELN tool"
 homepage = "https://github.com/seb-hyland/DocManager"
 edition = "2021"
 
 [dependencies]
-dioxus = { version = "0.6.0-alpha.4", features = ["desktop", "router"] }
+dioxus = { version = "0.6.0-alpha.5", features = ["desktop", "router"] }
+eyre = "0.6.12"
 homedir = "0.3.4"
 indexmap = {version = "2.6.0", features = ["serde"]}
 rusqlite = "0.32.1"
