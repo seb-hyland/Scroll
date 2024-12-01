@@ -67,7 +67,7 @@ fn laid_in_state() -> Result<()> {
     let context = use_context::<AttributeCreator>();
     let current_path = FILE_DATA.read().current_path.clone();
     let mut file_name: String = (context.filename)();
-    let file_path = current_path.clone().join(&file_name);
+    let file_path = current_path.clone().join(&file_name).with_extension("md");
     let db_path = current_path.clone().join("database.db");
     let connection = Connection::open(&db_path)?;
     File::create(file_path)?;

@@ -91,7 +91,7 @@ impl FileData {
 	for entry in self.path_contents.iter().enumerate() {
 	    let path = entry.1.clone();
 	    if path.extension().map_or(false, |ext| ext == "md") {
-                if let Some(file_name) = path.file_name().unwrap_or_default().to_str() {
+                if let Some(file_name) = path.file_stem().unwrap_or_default().to_str() {
                     if let Some(conn) = &connection {
                         let mut attributes = vec![file_name.to_string()];
                         let query = "SELECT * FROM FileAttributes WHERE filename = ?";

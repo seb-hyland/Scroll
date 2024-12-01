@@ -78,7 +78,11 @@ pub fn Viewer() -> Element {
 				    onclick: move |_| {
                                         let filepath = {
 					    let mut path = FILE_DATA.read().current_path.clone();
-					    path.push(data.get(0).unwrap_or(&String::new()).clone());
+					    path.push(data
+						      .get(0)
+						      .unwrap_or(&String::new())
+						      .clone());
+					    path.set_extension("md");
 					    path
                                         };
 					tokio::spawn(async move {
