@@ -269,13 +269,20 @@ fn ErrorAnalyzer() -> Element {
 
 fn Eternity() -> Element {
     let navigator = use_navigator();
+    let mut message = use_signal(|| String::new());
     rsx! {
         button { onclick: move |_| {
-            laid_in_state();
-            FILE_DATA.write().refresh();
-            navigator.push(Route::Viewer {});
-        },
-            "Save" }
+            match laid_in_state() {
+		Ok(()) => {
+		    FILE_DATA.write().refresh();
+		    navigator.push(Route::Viewer {});
+		}
+		Err(e) => {
+		    message.set(e.to_string());
+		}
+	    }},
+		 "Save" }
+	" { message() } "
     } 
 }
 
