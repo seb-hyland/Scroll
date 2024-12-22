@@ -8,15 +8,20 @@ use serde::{Deserialize, Serialize};
 
 pub fn Home() -> Element {
     let nav = navigator();
-    let base_dir = DOC_DIR.clone();
-    let wetlab_path = base_dir.join("wet-lab").to_string_lossy().into_owned();
+    let base = &DOC_DIR;
     rsx! {
         document::Link { rel: "stylesheet", href: asset!("/assets/main.css") }
         h1 { "Welcome to Scroll" }
         h2 { "The UBC iGEM 2025 Documentation Manager" }
+
         button { onclick: move |_| {
-            FILE_DATA.write().set_path(base_dir.clone().join("wet-lab"));
+            FILE_DATA.write().set_path(base.join("wet-lab"));
             nav.push(Route::Viewer {});
         }, "Wet lab" }
+
+        button { onclick: move |_| {
+            FILE_DATA.write().set_path(base.join("dry-lab"));
+            nav.push(Route::Viewer {});
+        }, "Dry lab" }
     }
 }

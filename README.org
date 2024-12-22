@@ -2,3 +2,4 @@
 Scroll is a documentation management and electronic lab notebook (ELN) tool, which relies on local Markdown editing and Git version control rather than online real-time collaboration.
 
 /Note: Scroll is currently in beta development./
+
