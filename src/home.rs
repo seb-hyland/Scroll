@@ -3,8 +3,6 @@ use crate::Route;
 use crate::FILE_DATA;
 use crate::files::DOC_DIR;
 use dioxus::prelude::*;
-use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 
 pub fn Home() -> Element {
     let nav = navigator();
@@ -15,12 +13,12 @@ pub fn Home() -> Element {
         h2 { "The UBC iGEM 2025 Documentation Manager" }
 
         button { onclick: move |_| {
-            FILE_DATA.write().set_path(base.join("wet-lab"));
+            FILE_DATA.write().goto(base.join("wet-lab"));
             nav.push(Route::Viewer {});
         }, "Wet lab" }
 
         button { onclick: move |_| {
-            FILE_DATA.write().set_path(base.join("dry-lab"));
+            FILE_DATA.write().goto(base.join("dry-lab"));
             nav.push(Route::Viewer {});
         }, "Dry lab" }
     }

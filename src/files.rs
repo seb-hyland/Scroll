@@ -1,12 +1,10 @@
 #![allow(non_snake_case)]
 use dioxus::prelude::*;
-use eyre::{Report, Result};
+use eyre::Result;
 use homedir::my_home;
 use rusqlite::{params, Connection};
-use serde_json::Value;
 use std::{
-    error::Error,
-    fs,
+    fs::{read_to_string, read_dir},
     path::PathBuf,
     sync::LazyLock,
 };
@@ -80,8 +78,11 @@ impl FileData {
     }
 
     
-    pub fn refresh(&mut self) -> Result<()> {
-        let entries = std::fs::read_dir(&self.current_path)?;
+    pub fn refresh(&mut self) {
+        let current_dir = &self.current_path;
+        let dir_read = read_dir(current_dir);
+        assert!(dir_read.is_ok(), "{}", format!("The directory {} could not be read", current_dir.display()));
+        let entries = dir_read.unwrap();
         self.clear();
         for entry in entries {
             if let Ok(entry) = entry {
@@ -91,11 +92,7 @@ impl FileData {
         self.directories = self.get_directories();
         self.attributes = self.get_attributes();
         self.metadata = self.get_metadata();
-        self.breadcrumbs = match self.get_breadcrumbs() {
-            Ok(crumbs) => crumbs,
-            Err(e) => vec![],
-        };
-        Ok(())
+        self.breadcrumbs = self.get_breadcrumbs();
     }
 
     
@@ -105,13 +102,11 @@ impl FileData {
 
     
     fn get_directories(&self) -> Vec<PathBuf> {
-	let mut directories: Vec<PathBuf> = vec![];
-	for entry in self.path_contents.iter().enumerate() {
-	    if entry.1.is_dir() {
-		directories.push(entry.1.clone());
-	    }
-	}
-	directories
+	let directories: Vec<PathBuf> = self.path_contents.iter()
+            .filter(|p| p.is_dir())
+            .cloned()
+            .collect();
+        directories
     }
 
     
@@ -162,55 +157,60 @@ impl FileData {
 
     
     pub fn get_attributes(&self) -> Result<Vec<(String, InputField)>, String> {
-        let mut results = Vec::new();
-        let file_path = self.current_path.join("attributes.scroll");
-        let stub = String::from(format!("Unable to parse attributes file. Please inform a lead immediately with the following debug information: |Attribute file| {}. |Additional info|", file_path.display()));
-        let data = match fs::read_to_string(file_path) {
+        let attribute_file = self.current_path.join("attributes.scroll");
+        let data = match read_to_string(&attribute_file) {
             Ok(v) => v,
             Err(_) => return Ok(Vec::new()),
         };
-        for (i, line) in data.lines().enumerate() {
-            let line_number = i + 1;
-            let error_report = |database| String::from(format!(
-                "{stub} Parsing error. Line: {line_number}. Internal error: {database}."));
-            if line.trim().is_empty() {
-                continue;
-            }
-            let parts: Vec<&str> = line.split(":").collect();
-            if parts.len() != 2 {
-                return Err(error_report(String::new()));
-            }
-            let attr_title = parts.get(0)
-                .ok_or_else(|| error_report(String::new()))?
-                .trim().to_string();
-            let raw_type = parts.get(1)
-                .ok_or_else(|| error_report(String::new()))?
-                .trim().to_string();
-            let attr_type: InputField = Self::parse_attributes(raw_type.as_str())
-                .map_err(|e| error_report(e))?;
-            results.push((attr_title, attr_type));
-        }
-	return Ok(results);
+
+        let err_stub = format!("Unable to parse attributes file. Please inform a lead immediately with the following debug information: |Attribute file| {}. |Additional info|", attribute_file.display());
+        let err_report = |database, line_number| format!(
+            "{err_stub} Parsing error. Line: {line_number}. Internal error: {database}.");
+
+        // Trim empty lines. Early return if invalid syntax is identified.
+        let trimmed_data: Vec<(&str, &str)> = data.lines()
+            .enumerate()
+            .filter(|(_, line)| !line.trim().is_empty())
+            .map(|(i, line)| {
+                let line_num = i + 1;
+                let parts: Vec<&str> = line.split(":").collect();
+                if parts.len() == 2 {
+                    assert!(parts.get(0).is_some() && parts.get(1).is_some(),
+                        "Attribute key-value pair improperly validated.");
+                    Ok((parts[0].trim(), parts[1].trim()))
+                } else {
+                    Err(err_report(String::new(), line_num))
+                }
+            })
+            .collect::<Result<Vec<(&str, &str)>, String>>()?;
+
+        // Parse the components of each line
+        trimmed_data.iter().enumerate()
+            .map(|(i, (title, raw_type))| {
+                let line_num = i + 1;
+                let attr_type: InputField = Self::parse_attributes(raw_type)
+                    .map_err(|e| err_report(e, line_num))?;
+                Ok((title.to_string(), attr_type))
+            })
+            .collect()
     }
 
+    
     fn parse_attributes(mut s: &str) -> Result<InputField, String> {
         let asterisk = s.starts_with("*");
         if asterisk {
             s = &s[1..s.len()];    
         }
-        println!("String to parse: {:?}", s);
         let basic_parse = |keyword: &str| -> bool {
             tag::<_, _, (_, ErrorKind)>(keyword)(s).is_ok()
         };
         let advanced_parse = |stub: &str| -> Option<String> {
-            println!("Passed stub: {:?}", stub);
             let search_string = format!("{stub}("); 
             let result = delimited(
                 tag::<_,_,(_, ErrorKind)>(search_string.as_str()),
                 take_until(")"),
                 tag(")")
             )(s);
-            println!("Result: {:?}", result);
             match result {
                 Ok((_, parsed_content)) => {
                     Some(parsed_content.to_string())
@@ -218,6 +218,7 @@ impl FileData {
                 Err(_) => None,
             }
         };
+        
         if basic_parse("String") {
             return Ok(InputField::String { req: asterisk });
         }
@@ -225,18 +226,16 @@ impl FileData {
             return Ok(InputField::Date { req: asterisk });
         }
         if let Some(capture) = advanced_parse("One") {
-            println!{"Received parse: {:?}", capture};
             let option_list = Self::parse_list(&capture)
-                .map_err(|_| String::from(format!("|Malformed database: {capture}.|")))?;
+                .map_err(|_| format!("|Malformed database: {capture}.|"))?;
             return Ok(InputField::One { req: asterisk, options: option_list });
         }
         if let Some(capture) = advanced_parse("Multi") {
-            println!{"Received parse: {:?}", capture};
             let option_list = Self::parse_list(&capture)
-                .map_err(|_| String::from(format!("|Malformed database: {capture}.|")))?;
+                .map_err(|_| format!("|Malformed database: {capture}.|"))?;
             return Ok(InputField::Multi { req: asterisk, options: option_list });
         }
-        return Err(String::new());
+        return Err("Malformed attribute syntax.".to_string());
     }
 
 
@@ -251,56 +250,44 @@ impl FileData {
     ///     - `e` is of type [`eyre::Report`]
     fn parse_list(list_id: &str) -> Result<Vec<String>> {
         let file_path: PathBuf = DOC_DIR
-            .clone()
             .join("sys")
             .join(list_id)
             .with_extension("scroll");
-        let mut file_contents = fs::read_to_string(&file_path)?;
-        let mut list: Vec<String> = Vec::new();
-        for line in file_contents.lines() {
-            list.push(String::from(line));
-        }
-        println!("For {}, contents: {:?}", &file_path.display(), list);
-        Ok(list)
+        let file_contents = read_to_string(&file_path)?;
+        Ok(file_contents.lines()
+            .map(String::from)
+            .collect())
     }
 
 
-    fn get_breadcrumbs(&self) -> Result<Vec<(PathBuf, String)>> {
-	let mut accumulated_path = DOC_DIR.clone();
-        accumulated_path.pop();
-	let relative_path = self.current_path.strip_prefix(&accumulated_path)?;
-	let breadcrumbs: Vec<(PathBuf, String)> = relative_path
+    fn get_breadcrumbs(&self) -> Vec<(PathBuf, String)> {
+	let mut base_path = DOC_DIR.clone();
+        base_path.pop();
+
+        let relative_path = self.current_path.strip_prefix(&base_path);
+        assert!(relative_path.is_ok(), "Current directory is not a valid documentation directory.");
+
+        let mut accumulator = base_path;
+	let breadcrumbs: Vec<(PathBuf, String)> = relative_path.unwrap()
 	    .components()
 	    .map(|component| {
-		accumulated_path.push(component);
-		(accumulated_path.clone(), component.as_os_str().to_string_lossy().into_owned())
+		accumulator.push(component);
+		(accumulator.clone(), component.as_os_str().to_string_lossy().into_owned())
 	    })
 	    .collect();
-	Ok(breadcrumbs)
+        breadcrumbs
     }
 
     
     pub fn goto(&mut self, path: PathBuf) {
-        if path.is_dir() {
-            if path == DOC_DIR.clone() {
-                let nav = navigator();
-                nav.push(Route::Home {});
-            }
-            else {
-	        self.current_path = path;
-	        self.refresh();
-            }
+        assert!(path.is_dir(), "Attempted navigation to a non-directory file");
+        if path == DOC_DIR.clone() {
+            let nav = navigator();
+            nav.push(Route::Home {});
         }
-    }
-
-    
-    pub fn set_path(&mut self, path: PathBuf) {
-        self.current_path = path;
-        self.refresh();
-    }
-
-    
-    pub fn select_file(&mut self, path: PathBuf) {
-        self.selected_file = path;
+        else {
+	    self.current_path = path;
+	    self.refresh();
+        }
     }
 }

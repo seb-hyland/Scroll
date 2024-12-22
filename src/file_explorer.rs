@@ -1,5 +1,4 @@
 use dioxus::prelude::*;
-use std::{path::PathBuf, ffi::OsStr};
 use tokio::process::Command;
 use eyre::Result;
 use crate::FILE_DATA;
@@ -7,12 +6,12 @@ use crate::Route;
 
 
 
-async fn marktext(filename: String) -> Result<()> {
+async fn marktext(filename: String) {
     Command::new("/apps/marktext")
         .arg(filename)
         .output()
-        .await?;
-    Ok(())
+        .await
+        .unwrap();
 }
 
 
@@ -53,7 +52,7 @@ fn NewButton() -> Element {
             }
             else { rsx! {} }
         },
-        Err(e) => rsx! {}
+        Err(_) => rsx! {}
     };
     component
 }
@@ -138,7 +137,6 @@ fn FileTable() -> Element {
 
 #[component]
 pub fn Viewer() -> Element {
-    assert!(true == false, "Example assertion");
     rsx! {
 	document::Link { rel: "stylesheet", href: asset!("/assets/main.css") },
 	div {

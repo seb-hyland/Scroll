@@ -1,15 +1,12 @@
-use crate::files::DOC_DIR;
 use crate::Route;
 use crate::FILE_DATA;
 use crate::files::InputField;
 use dioxus::prelude::*;
 use eyre::{Report, Result};
-use serde_json::Value;
 use rusqlite::{params_from_iter, Connection};
 use std::{
-    error,
     fs::File,
-    io::{Read, Write},
+    io::Write,
     path::PathBuf,
 };
 
@@ -62,9 +59,7 @@ fn Form() -> Element {
                 }
             }
         },
-        Err(e) => {
-            rsx! {}
-        }
+        Err(_) => { rsx! {} }
     }
 }
 
@@ -114,7 +109,7 @@ fn ElementInput(id: usize) -> Element {
         .map(|s| s.clone())
         .unwrap_or_else(String::new);
     match element {
-        InputField::String { req, .. } => {
+        InputField::String { .. } => {
             rsx! {
                 textarea {
                     rows: "4",
@@ -123,16 +118,16 @@ fn ElementInput(id: usize) -> Element {
                     oninput: move |event| { binding(event.value()); } }
             }
         },
-        InputField::Date { req, .. } => {
+        InputField::Date { .. } => {
             rsx! {
                 input {
                     type: "date",
                     value: "{ display }",
                     oninput: move |event| { binding(event.value()); } }
-                button { onclick: move |event| { binding(String::new()); }, "Clear" },
+                button { onclick: move |_| { binding(String::new()); }, "Clear" },
             }
         },
-        InputField::One { options, req, .. } => {
+        InputField::One { options, .. } => {
             rsx! {
                 select {
                     oninput: move |event| { binding(event.value()); },
@@ -143,7 +138,7 @@ fn ElementInput(id: usize) -> Element {
                 }
             }
         },
-        InputField::Multi { options, req, ..} => {
+        InputField::Multi { options, .. } => {
             println!("Multifield options: {:?}", options);
             rsx! {
                 select {
@@ -163,7 +158,7 @@ fn ElementInput(id: usize) -> Element {
                         option { value: "{ option }", "{ option }" }
                     },
                 }
-                button { onclick: move |event| { binding(String::new()); }, "Clear" }
+                button { onclick: move |_| { binding(String::new()); }, "Clear" }
                 p { "Selected: { display }" }
         
             }
@@ -458,8 +453,8 @@ fn check_req(id: usize) -> Result<()> {
 //}
 
 fn ErrorAnalyzer() -> Element {
-    let mut binding = use_context::<FileGenerator>().state;
-    let mut state = binding.read().clone();
+    let binding = use_context::<FileGenerator>().state;
+    let state = binding.read().clone();
     let mut error: Vec<String> = Vec::new();
     match state {
         CreatorState::Ok => rsx! { Eternity {} },
@@ -475,14 +470,14 @@ fn ErrorAnalyzer() -> Element {
 }
 
 fn Eternity() -> Element {
-    let navigator = use_navigator();
+    let nav = navigator();
     let mut message = use_signal(|| String::new());
     rsx! {
         button { onclick: move |_| {
             match laid_in_state() {
 		Ok(()) => {
 		    FILE_DATA.write().refresh();
-		    navigator.push(Route::Viewer {});
+		    nav.push(Route::Viewer {});
 		}
 		Err(e) => {
 		    message.set(e.to_string());
@@ -496,7 +491,7 @@ fn Eternity() -> Element {
 /// Major component for new file creation UI
 #[component]
 pub fn Creator() -> Element {
-    let attr_creator = use_context_provider(|| FileGenerator {
+    let _attr_creator = use_context_provider(|| FileGenerator {
         filename: Signal::new(String::new()),
         metadata: Signal::new(vec![String::new(); FILE_DATA.read().attributes.clone().unwrap_or(Vec::new()).len()]),
         state: Signal::new(CreatorState::Ok),
