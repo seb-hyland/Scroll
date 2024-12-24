@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+use crate::Route;
 use dioxus::prelude::*;
 use eyre::Result;
 use homedir::my_home;
@@ -12,7 +13,7 @@ use nom::{
     bytes::complete::{tag, take_until},
     error::ErrorKind,
     sequence::delimited};
-use crate::Route;
+use rayon::prelude::*;
 
 
 
@@ -291,3 +292,4 @@ impl FileData {
         }
     }
 }
+
