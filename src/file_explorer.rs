@@ -1,6 +1,5 @@
 use dioxus::prelude::*;
 use tokio::process::Command;
-use eyre::Result;
 use crate::FILE_DATA;
 use crate::Route;
 

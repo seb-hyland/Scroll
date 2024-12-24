@@ -2,7 +2,7 @@ use crate::Route;
 use crate::FILE_DATA;
 use crate::files::InputField;
 use dioxus::prelude::*;
-use eyre::{Report, Result};
+use eyre::Result;
 use rusqlite::{params_from_iter, Connection};
 use std::{
     fs::File,
