@@ -133,7 +133,7 @@ fn FileTable() -> Element {
                                         nav.push(Route::Editor { name: name.clone() });
                                         println!("Pushed route: {:?}", name);
                                     },
-                                    "✏️"
+                                    "⚙"
                                 }
                             }
 			    for data_out in data.iter().skip(1) {
