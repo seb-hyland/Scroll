@@ -12,7 +12,6 @@ dependencies = [
  "native-dialog",
  "nom",
  "rayon",
- "serde",
  "serde_json",
  "tokio",
 ]

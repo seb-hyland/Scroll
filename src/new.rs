@@ -5,7 +5,7 @@ use crate::tools::json_processor;
 use dioxus::prelude::*;
 use eyre::Result;
 use std::{
-    fs::{File, write},
+    fs::{File, write, remove_file},
     path::PathBuf,
 };
 use rayon::prelude::*;
@@ -290,7 +290,8 @@ fn laid_in_state() -> Result<()> {
     }
     metadata.push(new_vector);
 
-    let json_array = json_processor::vec_to_json(&metadata);
+    let mut json_array = json_processor::vec_to_json(&metadata);
+    json_processor::sort_json(&mut json_array);
     let json_string = serde_json::to_string_pretty(&json_array)?;
 
     let file_path = current_path.clone().join(&*new_filename.read()).with_extension("md");
@@ -386,7 +387,8 @@ fn refreeze() -> Result<()> {
     json_processor::update_json_hashmap(&mut metadata_json, &new_filename.read(), new_vector);
     let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(&metadata_json);
 
-    let json_array = json_processor::vec_to_json(&metadata);
+    let mut json_array = json_processor::vec_to_json(&metadata);
+    json_processor::sort_json(&mut json_array);
     let json_string = serde_json::to_string_pretty(&json_array)?;
 
     let file_path = current_path.clone().join(&*new_filename.read()).with_extension("md");
@@ -395,6 +397,54 @@ fn refreeze() -> Result<()> {
 
     Ok(())
 }
+
+
+#[component]
+fn Deleter() -> Element {
+    let nav = navigator();
+    let mut message = use_signal(|| String::new());
+    rsx! {
+        button { onclick: move |_| {
+            match fall_out_of_window() {
+		Ok(()) => {
+		    FILE_DATA.write().refresh();
+		    nav.push(Route::Viewer {});
+		}
+		Err(e) => {
+		    message.set(e.to_string());
+		}
+	    }},
+            "🗑️ Delete this file and its associated data"
+        }
+    }
+}
+
+
+fn fall_out_of_window() -> Result<()> {
+    let context = use_context::<FileGenerator>();
+    let current_path = &FILE_DATA.read().current_path;
+    let db_path = current_path.join(".database.json");
+    assert!(db_path.exists(), "Database does not exist yet file creator called");
+    
+    let filename = context.filename;
+
+    let metadata_json_binding = json_processor::get_json_hashmap(&FILE_DATA.read().current_path);
+    assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
+    let mut metadata_json = metadata_json_binding.unwrap();
+    json_processor::delete_from_hashmap(&mut metadata_json, &filename.read());
+
+    let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(&metadata_json);
+    let mut json_array = json_processor::vec_to_json(&metadata);
+    json_processor::sort_json(&mut json_array);
+    let json_string = serde_json::to_string_pretty(&json_array)?;
+    write(db_path, json_string)?;
+
+    let file_path = current_path.clone().join(&*filename.read()).with_extension("md");
+    remove_file(file_path)?;
+    Ok(()) 
+}
+
+
 /// Major component for new file creation UI
 #[component]
 pub fn Creator() -> Element {
@@ -417,7 +467,6 @@ pub fn Creator() -> Element {
 }
 
 
-
 #[component]
 pub fn Editor(name: String) -> Element {
     assert!(FILE_DATA.read().metadata.is_ok(), "Invalid metadata yet file creator called.");
@@ -435,12 +484,12 @@ pub fn Editor(name: String) -> Element {
         metadata: Signal::new(metadata),
         state: Signal::new(CreatorState::Ok),
     });
-
-    println!("{:?}", use_context::<FileGenerator>());
     
     rsx! {
         div {
             h1 { "Updating metadata for {name} "}
+            br {}
+            Deleter {}
             br {}
             Form {}
             br {}
