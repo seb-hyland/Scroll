@@ -1,18 +1,14 @@
 #![allow(non_snake_case)]
 use crate::Route;
+use crate::tools::{JSONProcessor, ScrollProcessor};
 use dioxus::prelude::*;
-use eyre::Result;
+use eyre::{Report, Result};
 use homedir::my_home;
-use rusqlite::{params, Connection};
 use std::{
     fs::{read_to_string, read_dir},
     path::PathBuf,
     sync::LazyLock,
 };
-use nom::{
-    bytes::complete::{tag, take_until},
-    error::ErrorKind,
-    sequence::delimited};
 use rayon::prelude::*;
 
 
@@ -32,7 +28,7 @@ pub struct FileData {
     pub current_path: PathBuf,
     path_contents: Vec<PathBuf>,
     pub directories: Vec<PathBuf>,
-    pub metadata: Vec<Vec<String>>,
+    pub metadata: Result<Vec<Vec<String>>, String>,
     pub attributes: Result<Vec<(String, InputField)>, String>,
     pub breadcrumbs: Vec<(PathBuf, String)>,
     pub selected_file: PathBuf,
@@ -40,7 +36,7 @@ pub struct FileData {
 
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum InputField {
     String { req: bool },
     Date { req: bool },
@@ -71,7 +67,7 @@ impl FileData {
             attributes: Ok(Vec::new()),
             path_contents: Vec::new(),
             directories: Vec::new(),
-            metadata: Vec::new(),
+            metadata: Ok(Vec::new()),
             breadcrumbs: Vec::new(),
         };
         files.refresh();
@@ -92,7 +88,12 @@ impl FileData {
         }
         self.directories = self.get_directories();
         self.attributes = self.get_attributes();
-        self.metadata = self.get_metadata();
+        self.metadata = if self.attributes.is_ok() {
+            self.get_metadata().map_err(|e| e.to_string())
+        }
+        else {
+            Ok(Vec::new())
+        };
         self.breadcrumbs = self.get_breadcrumbs();
     }
 
@@ -111,54 +112,8 @@ impl FileData {
     }
 
     
-    fn get_metadata(&self) -> Vec<Vec<String>> {
-	let mut metadata: Vec<Vec<String>> = vec![];
-        let db_path = PathBuf::from(&self.current_path).join("database.db");
-        let connection: Option<Connection> = match Connection::open(&db_path) {
-            Ok(conn) => Some(conn),
-            Err(_) => None,
-        };
-	for entry in self.path_contents.iter().enumerate() {
-	    let path = entry.1.clone();
-	    if path.extension().map_or(false, |ext| ext == "md") {
-                if let Some(file_name) = path.file_stem().unwrap_or_default().to_str() {
-                    if let Some(conn) = &connection {
-                        let mut attributes = vec![file_name.to_string()];
-                        let query = "SELECT * FROM FileAttributes WHERE filename = ?";
-                        let mut stmt = match conn.prepare(query) {
-                            Ok(stmt) => stmt,
-                            Err(err) => {
-                                eprintln!("Failed to prepare query: {:?}", err);
-                                continue;
-                            }
-                        };
-                        let column_count = stmt.column_count();
-                        let mut rows = match stmt.query(params![file_name]) {
-                            Ok(rows) => rows,
-                            Err(err) => {
-                                eprintln!("Failed to get rows: {:?}", err);
-                                continue;
-                            }
-                        };
-                        if let Some(row) = rows.next().unwrap_or(None) {
-                            for i in 1..column_count {
-                                let value: Option<String> = row.get(i).unwrap_or(Some(String::new()));
-                                attributes.push(value.unwrap_or(String::new()));
-                            }
-                        }
-                        metadata.push(attributes);
-                    } else {
-                        metadata.push(vec![file_name.to_string()]);
-                    }
-                }
-	    }
-        }
-	metadata
-    }
-
-    
     pub fn get_attributes(&self) -> Result<Vec<(String, InputField)>, String> {
-        let attribute_file = self.current_path.join("attributes.scroll");
+        let attribute_file = self.current_path.join(".attributes.scroll");
         let data = match read_to_string(&attribute_file) {
             Ok(v) => v,
             Err(_) => return Ok(Vec::new()),
@@ -168,28 +123,14 @@ impl FileData {
         let err_report = |database, line_number| format!(
             "{err_stub} Parsing error. Line: {line_number}. Internal error: {database}.");
 
-        // Trim empty lines. Early return if invalid syntax is identified.
-        let trimmed_data: Vec<(&str, &str)> = data.lines()
-            .enumerate()
-            .filter(|(_, line)| !line.trim().is_empty())
-            .map(|(i, line)| {
-                let line_num = i + 1;
-                let parts: Vec<&str> = line.split(":").collect();
-                if parts.len() == 2 {
-                    assert!(parts.get(0).is_some() && parts.get(1).is_some(),
-                        "Attribute key-value pair improperly validated.");
-                    Ok((parts[0].trim(), parts[1].trim()))
-                } else {
-                    Err(err_report(String::new(), line_num))
-                }
-            })
-            .collect::<Result<Vec<(&str, &str)>, String>>()?;
+        let trimmed_data: Vec<(&str, &str)> = ScrollProcessor::parse_pairs(&data)
+            .map_err(|e| err_report(String::new(), e))?;
 
         // Parse the components of each line
         trimmed_data.iter().enumerate()
             .map(|(i, (title, raw_type))| {
                 let line_num = i + 1;
-                let attr_type: InputField = Self::parse_attributes(raw_type)
+                let attr_type: InputField = ScrollProcessor::parse_attribute(raw_type)
                     .map_err(|e| err_report(e, line_num))?;
                 Ok((title.to_string(), attr_type))
             })
@@ -197,70 +138,30 @@ impl FileData {
     }
 
     
-    fn parse_attributes(mut s: &str) -> Result<InputField, String> {
-        let asterisk = s.starts_with("*");
-        if asterisk {
-            s = &s[1..s.len()];    
-        }
-        let basic_parse = |keyword: &str| -> bool {
-            tag::<_, _, (_, ErrorKind)>(keyword)(s).is_ok()
-        };
-        let advanced_parse = |stub: &str| -> Option<String> {
-            let search_string = format!("{stub}("); 
-            let result = delimited(
-                tag::<_,_,(_, ErrorKind)>(search_string.as_str()),
-                take_until(")"),
-                tag(")")
-            )(s);
-            match result {
-                Ok((_, parsed_content)) => {
-                    Some(parsed_content.to_string())
+    fn get_metadata(&self) -> Result<Vec<Vec<String>>> {
+        let objects = JSONProcessor::get_json_hashmap(&self.current_path);
+        let result = objects?.par_iter()
+            .map(|(_, map)| {
+                let mut struct_metadata: Vec<String> = Vec::new();
+                struct_metadata.push(map
+                    .get("__ID")
+                    .cloned()
+                    .unwrap_or("".to_string()));
+                
+                assert!(self.attributes.is_ok(), "Metadata computed with invalid attributes");
+                for (attribute, _) in self.attributes.as_ref().unwrap().iter() {
+                    struct_metadata.push(map
+                        .get(attribute)
+                        .cloned()
+                        .unwrap_or("".to_string()));
                 }
-                Err(_) => None,
-            }
-        };
-        
-        if basic_parse("String") {
-            return Ok(InputField::String { req: asterisk });
-        }
-        if basic_parse("Date") {
-            return Ok(InputField::Date { req: asterisk });
-        }
-        if let Some(capture) = advanced_parse("One") {
-            let option_list = Self::parse_list(&capture)
-                .map_err(|_| format!("|Malformed database: {capture}.|"))?;
-            return Ok(InputField::One { req: asterisk, options: option_list });
-        }
-        if let Some(capture) = advanced_parse("Multi") {
-            let option_list = Self::parse_list(&capture)
-                .map_err(|_| format!("|Malformed database: {capture}.|"))?;
-            return Ok(InputField::Multi { req: asterisk, options: option_list });
-        }
-        return Err("Malformed attribute syntax.".to_string());
+                struct_metadata
+            })
+            .collect::<Vec<Vec<String>>>();
+        Ok(result)
     }
 
-
-    /// Parses a list of attribute types into a Rust vector
-    ///
-    /// # Props
-    /// - `list_id`: The name of the list file in `DOC_DIR/sys`
-    ///
-    /// # Returns
-    /// - `Ok` if the file is successfully parsed
-    /// - `Err(e)` if the file cannot be found or JSON parsing fails
-    ///     - `e` is of type [`eyre::Report`]
-    fn parse_list(list_id: &str) -> Result<Vec<String>> {
-        let file_path: PathBuf = DOC_DIR
-            .join("sys")
-            .join(list_id)
-            .with_extension("scroll");
-        let file_contents = read_to_string(&file_path)?;
-        Ok(file_contents.lines()
-            .map(String::from)
-            .collect())
-    }
-
-
+    
     fn get_breadcrumbs(&self) -> Vec<(PathBuf, String)> {
 	let mut base_path = DOC_DIR.clone();
         base_path.pop();

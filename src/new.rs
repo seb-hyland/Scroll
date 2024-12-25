@@ -1,12 +1,11 @@
 use crate::Route;
 use crate::FILE_DATA;
 use crate::files::InputField;
+use crate::tools::JSONProcessor;
 use dioxus::prelude::*;
 use eyre::Result;
-use rusqlite::{params_from_iter, Connection};
 use std::{
-    fs::File,
-    io::Write,
+    fs::{File, write},
     path::PathBuf,
 };
 
@@ -260,17 +259,35 @@ fn is_valid_name(name: &str) -> bool {
 fn laid_in_state() -> Result<()> {
     let context = use_context::<FileGenerator>();
     let current_path = FILE_DATA.read().current_path.clone();
-    let mut file_name: String = (context.filename)();
-    let file_path = current_path.clone().join(&file_name).with_extension("md");
-    let db_path = current_path.clone().join("database.db");
-    let connection = Connection::open(&db_path)?;
-    File::create(file_path)?;
+    let db_path = current_path.clone().join(".database.json");
+    assert!(db_path.exists(), "Database does not exist yet file creator called");
+    
+    let attributes_binding = FILE_DATA.read().attributes.clone();
+    assert!(attributes_binding.is_ok(), "Invalid attributes, yet file creator called");
+    let attributes = attributes_binding.as_ref().unwrap();
 
-    let mut attributes = context.metadata.read().clone();
-    attributes.insert(0, file_name);
-    let placeholders = vec!["?"; attributes.len()].join(", ");
-    let query = format!("INSERT INTO FileAttributes VALUES ({})", placeholders);
-    connection.execute(&query, params_from_iter(attributes))?;
+    let metadata_json_binding = JSONProcessor::get_json_hashmap(&FILE_DATA.read().current_path);
+    assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
+    let metadata_json = metadata_json_binding.as_ref().unwrap();
+    let mut metadata: Vec<Vec<(String, String)>> = JSONProcessor::hashmap_to_vec(metadata_json);
+
+    let new_filename = context.filename;
+    let new_metadata = context.metadata;
+
+    let mut new_vector = vec![("__ID".to_string(), new_filename.read().clone())];
+    assert!(attributes.len() == new_metadata.read().len(), "Attribute and metadata vectors do not match");
+    for ((title, _), metadata) in attributes.iter().zip(new_metadata.read().iter()) {
+        new_vector.push((title.clone(), metadata.clone()));
+    }
+    metadata.push(new_vector);
+
+    let json_array = JSONProcessor::vec_to_json(&metadata);
+    let json_string = serde_json::to_string_pretty(&json_array)?;
+
+    let file_path = current_path.clone().join(&*new_filename.read()).with_extension("md");
+    File::create(file_path)?;
+    write(db_path, json_string)?;
+
     Ok(())
 }
 
@@ -319,7 +336,6 @@ pub fn Creator() -> Element {
         state: Signal::new(CreatorState::Ok),
 
     });
-    println!("{:?}", use_context::<FileGenerator>());
     rsx! {
         div {
             Form {}

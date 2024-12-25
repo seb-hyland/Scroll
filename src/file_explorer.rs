@@ -77,7 +77,11 @@ fn Directories() -> Element {
 
 fn FileTable() -> Element {
     let attributes = FILE_DATA.read().attributes.to_owned();
-    let metadata = FILE_DATA.read().metadata.clone();
+    let metadata_binding = FILE_DATA.read().metadata.clone();
+    let metadata = match metadata_binding {
+        Err(e) => { return rsx! { "An error occured:\n{e}" } },
+        Ok(v) => v,
+    };
     match attributes {
         Err(e) => { rsx! { "An error occured:\n{e}" } },
         Ok(v) => {

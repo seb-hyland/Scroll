@@ -17,6 +17,7 @@ mod file_explorer;
 mod home;
 mod files;
 mod new;
+mod tools;
 use crate::file_explorer::Viewer;
 use crate::home::Home;
 use crate::new::Creator;
