@@ -1,10 +1,11 @@
 #![allow(non_snake_case)]
 use crate::Route;
-use crate::tools::{JSONProcessor, ScrollProcessor};
+use crate::tools::{json_processor, scroll_processor, compare};
 use dioxus::prelude::*;
 use eyre::{Report, Result};
 use homedir::my_home;
 use std::{
+    cmp::Ordering,
     fs::{read_to_string, read_dir},
     path::PathBuf,
     sync::LazyLock,
@@ -32,6 +33,7 @@ pub struct FileData {
     pub attributes: Result<Vec<(String, InputField)>, String>,
     pub breadcrumbs: Vec<(PathBuf, String)>,
     pub selected_file: PathBuf,
+    ordering: fn(&Vec<String>, &Vec<String>) -> Ordering,
 }
 
 
@@ -69,6 +71,7 @@ impl FileData {
             directories: Vec::new(),
             metadata: Ok(Vec::new()),
             breadcrumbs: Vec::new(),
+            ordering: compare::alphabetical_inc,
         };
         files.refresh();
         files
@@ -87,6 +90,7 @@ impl FileData {
             }
         }
         self.directories = self.get_directories();
+        self.breadcrumbs = self.get_breadcrumbs();
         self.attributes = self.get_attributes();
         self.metadata = if self.attributes.is_ok() {
             self.get_metadata().map_err(|e| e.to_string())
@@ -94,7 +98,9 @@ impl FileData {
         else {
             Ok(Vec::new())
         };
-        self.breadcrumbs = self.get_breadcrumbs();
+        if let Ok(ref mut m) = &mut self.metadata {
+            m.sort_by(self.ordering);
+        }
     }
 
     
@@ -123,14 +129,14 @@ impl FileData {
         let err_report = |database, line_number| format!(
             "{err_stub} Parsing error. Line: {line_number}. Internal error: {database}.");
 
-        let trimmed_data: Vec<(&str, &str)> = ScrollProcessor::parse_pairs(&data)
+        let trimmed_data: Vec<(&str, &str)> = scroll_processor::parse_pairs(&data)
             .map_err(|e| err_report(String::new(), e))?;
 
         // Parse the components of each line
         trimmed_data.iter().enumerate()
             .map(|(i, (title, raw_type))| {
                 let line_num = i + 1;
-                let attr_type: InputField = ScrollProcessor::parse_attribute(raw_type)
+                let attr_type: InputField = scroll_processor::parse_attribute(raw_type)
                     .map_err(|e| err_report(e, line_num))?;
                 Ok((title.to_string(), attr_type))
             })
@@ -139,7 +145,7 @@ impl FileData {
 
     
     fn get_metadata(&self) -> Result<Vec<Vec<String>>> {
-        let objects = JSONProcessor::get_json_hashmap(&self.current_path);
+        let objects = json_processor::get_json_hashmap(&self.current_path);
         let result = objects?.par_iter()
             .map(|(_, map)| {
                 let mut struct_metadata: Vec<String> = Vec::new();
@@ -159,6 +165,15 @@ impl FileData {
             })
             .collect::<Vec<Vec<String>>>();
         Ok(result)
+    }
+
+    pub fn get_item_name(&self, i: usize) -> String {
+        assert!(self.metadata.is_ok(), "Metadata is invalid, yet item name queried");
+        let item = &self.metadata.as_ref().unwrap().get(i);
+        assert!(item.is_some(), "{}", format!("Invalid metadata item {i} queried"));
+        let title_binding = item.unwrap().get(0);
+        assert!(title_binding.is_some(), "{}", "Invalid title for metadata item {i}");
+        title_binding.unwrap().clone()
     }
 
     

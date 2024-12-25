@@ -1,13 +1,14 @@
 use crate::Route;
 use crate::FILE_DATA;
 use crate::files::InputField;
-use crate::tools::JSONProcessor;
+use crate::tools::json_processor;
 use dioxus::prelude::*;
 use eyre::Result;
 use std::{
     fs::{File, write},
     path::PathBuf,
 };
+use rayon::prelude::*;
 
 
 /// A struct that holds data while generating a new file
@@ -32,6 +33,12 @@ enum CreatorState {
 }
 
 
+#[derive(Clone, Debug, PartialEq, Props)]
+struct SubmissionType {
+    new: Option<()>,
+}
+
+
 impl CreatorState {
     pub fn file_error(&mut self) {
         *self = CreatorState::Err { error: vec!["File Name".to_string()] };
@@ -50,7 +57,7 @@ impl CreatorState {
 }
 
 
-fn Form() -> Element {
+fn Form(props: SubmissionType) -> Element {
     let attribute_binding = &FILE_DATA.read().attributes;
     assert!(&attribute_binding.is_ok(), "Invalid attributes, yet file creator called.");
     let attributes_length = attribute_binding.as_ref().unwrap().len();
@@ -58,8 +65,10 @@ fn Form() -> Element {
     error_checker();
 
     rsx! {
-        FileNamer {}
-        br {}
+        if props.new.is_some() {
+            FileNamer {}
+            br {}
+        }
         for id in 0..attributes_length {
             ElementCreator { id }
         }
@@ -156,10 +165,10 @@ fn ElementCreator(id: usize) -> Element {
                     rsx! {
                         select {
                             oninput: move |event| { binding(event.value()); },
-                            option { value: "", ""}
+                            option { value: "", "" }
                             for option in options.iter() {
-                                option { value: "{ option }", "{ option }" }
-                            },
+                                option { value: "{ option }", selected: *option == display, "{ option }" }
+                            }
                         }
                     }
                 },
@@ -258,18 +267,18 @@ fn is_valid_name(name: &str) -> bool {
 /// Gets file attributes from [`FileGenerator`]
 fn laid_in_state() -> Result<()> {
     let context = use_context::<FileGenerator>();
-    let current_path = FILE_DATA.read().current_path.clone();
-    let db_path = current_path.clone().join(".database.json");
+    let current_path = &FILE_DATA.read().current_path;
+    let db_path = current_path.join(".database.json");
     assert!(db_path.exists(), "Database does not exist yet file creator called");
     
     let attributes_binding = FILE_DATA.read().attributes.clone();
     assert!(attributes_binding.is_ok(), "Invalid attributes, yet file creator called");
     let attributes = attributes_binding.as_ref().unwrap();
 
-    let metadata_json_binding = JSONProcessor::get_json_hashmap(&FILE_DATA.read().current_path);
+    let metadata_json_binding = json_processor::get_json_hashmap(&FILE_DATA.read().current_path);
     assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
     let metadata_json = metadata_json_binding.as_ref().unwrap();
-    let mut metadata: Vec<Vec<(String, String)>> = JSONProcessor::hashmap_to_vec(metadata_json);
+    let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(metadata_json);
 
     let new_filename = context.filename;
     let new_metadata = context.metadata;
@@ -281,7 +290,7 @@ fn laid_in_state() -> Result<()> {
     }
     metadata.push(new_vector);
 
-    let json_array = JSONProcessor::vec_to_json(&metadata);
+    let json_array = json_processor::vec_to_json(&metadata);
     let json_string = serde_json::to_string_pretty(&json_array)?;
 
     let file_path = current_path.clone().join(&*new_filename.read()).with_extension("md");
@@ -292,17 +301,22 @@ fn laid_in_state() -> Result<()> {
 }
 
 
-fn Submission() -> Element {
+fn Submission(props: SubmissionType) -> Element {
     let binding = use_context::<FileGenerator>().state;
     let state = binding.read().clone();
     match state {
-        CreatorState::Ok => rsx! { Eternity {} },
+        CreatorState::Ok => {
+            match props.new {
+                Some(_) => rsx! { Eternity {} },
+                None => rsx! { Rebase {} },
+            }
+        },
         CreatorState::Err { error } => {
             let output_string = error.join(", ");
             rsx! {
                 "WARNING: The following fields are empty or invalid: { output_string }"
             }
-        }
+        },
     }
 }
 
@@ -321,23 +335,113 @@ fn Eternity() -> Element {
 		    message.set(e.to_string());
 		}
 	    }},
-		 "Save" }
+		 "Create" }
 	" { message() } "
     } 
 }
 
 
+fn Rebase() -> Element {
+    let nav = navigator();
+    let mut message = use_signal(|| String::new());
+    rsx! {
+        button { onclick: move |_| {
+            match refreeze() {
+		Ok(()) => {
+		    FILE_DATA.write().refresh();
+		    nav.push(Route::Viewer {});
+		}
+		Err(e) => {
+		    message.set(e.to_string());
+		}
+	    }},
+		 "Update" }
+	" { message() } "
+    } 
+}
+
+fn refreeze() -> Result<()> {
+    let context = use_context::<FileGenerator>();
+    let current_path = &FILE_DATA.read().current_path;
+    let db_path = current_path.join(".database.json");
+    assert!(db_path.exists(), "Database does not exist yet file creator called");
+    
+    let attributes_binding = FILE_DATA.read().attributes.clone();
+    assert!(attributes_binding.is_ok(), "Invalid attributes, yet file creator called");
+    let attributes = attributes_binding.as_ref().unwrap();
+
+    let metadata_json_binding = json_processor::get_json_hashmap(&FILE_DATA.read().current_path);
+    assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
+    let mut metadata_json = metadata_json_binding.unwrap();
+
+    let new_filename = context.filename;
+    let new_metadata = context.metadata;
+
+    let mut new_vector = vec![("__ID".to_string(), new_filename.read().clone())];
+    assert!(attributes.len() == new_metadata.read().len(), "Attribute and metadata vectors do not match");
+    for ((title, _), metadata) in attributes.iter().zip(new_metadata.read().iter()) {
+        new_vector.push((title.clone(), metadata.clone()));
+    }
+
+    json_processor::update_json_hashmap(&mut metadata_json, &new_filename.read(), new_vector);
+    let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(&metadata_json);
+
+    let json_array = json_processor::vec_to_json(&metadata);
+    let json_string = serde_json::to_string_pretty(&json_array)?;
+
+    let file_path = current_path.clone().join(&*new_filename.read()).with_extension("md");
+    File::create(file_path)?;
+    write(db_path, json_string)?;
+
+    Ok(())
+}
 /// Major component for new file creation UI
 #[component]
 pub fn Creator() -> Element {
+    assert!(FILE_DATA.read().attributes.is_ok(), "Invalid attributes yet file creator called.");
+
     let _attr_creator = use_context_provider(|| FileGenerator {
         filename: Signal::new(String::new()),
-        metadata: Signal::new(vec![String::new(); FILE_DATA.read().attributes.clone().unwrap_or(Vec::new()).len()]),
+        metadata: Signal::new(vec![String::new(); FILE_DATA.read().attributes.as_ref().unwrap().len()]),
         state: Signal::new(CreatorState::Ok),
-
     });
+
     rsx! {
         div {
+            Form { new: Some(()) }
+            br {}
+            Submission { new: Some(()) }
+            Link { to: Route::Viewer {}, "Cancel" }
+        }
+    }
+}
+
+
+
+#[component]
+pub fn Editor(name: String) -> Element {
+    assert!(FILE_DATA.read().metadata.is_ok(), "Invalid metadata yet file creator called.");
+    let metadata_binding = &FILE_DATA.read().metadata;
+    let metadata_vec = metadata_binding.as_ref().unwrap().par_iter()
+        .find_any(|inner_vec| inner_vec.get(0).map(|v| *v == name).unwrap_or(false));
+    assert!(metadata_vec.is_some(), "{}", format!("No metadata found for {name}"));
+    let mut metadata = metadata_vec.unwrap().into_iter()
+        .skip(1)
+        .cloned()
+        .collect();
+
+    let _attr_creator = use_context_provider(|| FileGenerator {
+        filename: Signal::new(name.clone()),
+        metadata: Signal::new(metadata),
+        state: Signal::new(CreatorState::Ok),
+    });
+
+    println!("{:?}", use_context::<FileGenerator>());
+    
+    rsx! {
+        div {
+            h1 { "Updating metadata for {name} "}
+            br {}
             Form {}
             br {}
             Submission {}

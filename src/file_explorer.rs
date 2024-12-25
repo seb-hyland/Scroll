@@ -76,66 +76,80 @@ fn Directories() -> Element {
 
 
 fn FileTable() -> Element {
-    let attributes = FILE_DATA.read().attributes.to_owned();
-    let metadata_binding = FILE_DATA.read().metadata.clone();
-    let metadata = match metadata_binding {
-        Err(e) => { return rsx! { "An error occured:\n{e}" } },
-        Ok(v) => v,
+    let attribute_binding = &FILE_DATA.read().attributes;
+    let metadata_binding = &FILE_DATA.read().metadata;
+    let attributes = match attribute_binding {
+        Err(e) => { return rsx! { "An error occured:\n{e}" }; },
+        Ok(v) => v.clone(),
     };
-    match attributes {
-        Err(e) => { rsx! { "An error occured:\n{e}" } },
-        Ok(v) => {
-            if v.is_empty() { rsx! {} }
-            else {
-                rsx! {
-	            table {
-                        thead {
-		            tr {
-			        th { "" }
-                                for attribute_name in v.iter() {
-			            th {
-                                        "{attribute_name.0}"
-			            }
-                                }
-		            }
+    let metadata = match metadata_binding {
+        Err(e) => { return rsx! { "An error occured:\n{e}" }; },
+        Ok(v) => v.clone(),
+    };
+    if attributes.is_empty() {
+        return rsx! {};
+    } else {
+        rsx! {
+	    table {
+                thead {
+		    tr {
+			th { "" }
+			th { "" }
+                        for attribute_name in attributes.iter() {
+			    th {
+                                "{attribute_name.0}"
+			    }
                         }
-                        tbody {
-		            for data in metadata.into_iter() {
-                                tr {
-			            td {
-                                        button {
-				            onclick: move |_| {
-                                                let filepath = {
-					            let mut path = FILE_DATA.read().current_path.clone();
-					            path.push(data
-					                .get(0)
-					                .unwrap_or(&String::new())
-					                .clone());
-					            path.set_extension("md");
-					            path
-                                                };
-				                tokio::spawn(async move {
-					            marktext(filepath.to_string_lossy().into_owned()).await;  
-                                                });
-				            },
-				            "{ data.get(0).unwrap_or(&String::new()) }"
-                                        }
-			            }
-			            for data_out in data.iter().skip(1) {
-                                        td {
-				            "{data_out}"
-                                        }
-			            }
-                                }
-		            }
-                        }
-	            }
+		    }
                 }
-
-            }
-        },
+                tbody {
+		    for (i, data) in metadata.into_iter().enumerate() {
+                        tr {
+			    td {
+                                button {
+				    onclick: move |_| {
+                                        let filepath = {
+                                            assert!(data.get(0).is_some(), "File name non existent in metadata");
+					    let mut path = FILE_DATA.read().current_path.clone();
+					    path.push(data
+					        .get(0)
+					        .unwrap()
+					        .clone());
+					    path.set_extension("md");
+					    path
+                                        };
+				        tokio::spawn(async move {
+					    marktext(filepath.to_string_lossy().into_owned()).await;  
+                                        });
+				    },
+				    "{ data.get(0).unwrap() }"
+                                }
+			    }
+                            td {
+                                button {
+                                    onclick: move |_| {
+                                        let nav = navigator();
+                                        let name = FILE_DATA.write().get_item_name(i);
+                                        nav.push(Route::Editor { name: name.clone() });
+                                        println!("Pushed route: {:?}", name);
+                                    },
+                                    "Edit"
+                                }
+                            }
+			    for data_out in data.iter().skip(1) {
+                                td {
+				    "{data_out}"
+                                }
+			    }
+                        }
+		    }
+                }
+	    }
+        }
     }
 }
+
+
 
 
 #[component]

@@ -73,3 +73,11 @@ pub fn vec_to_json(vector: &Vec<Vec<(String, String)>>) -> Vec<Value> {
         Value::Object(map)
     }).collect()
 }
+
+
+pub fn update_json_hashmap(
+    hashmap: &mut HashMap<String, HashMap<String, String>>,
+    name: &str, contents: Vec<(String, String)>) {
+        let content_map: HashMap<String, String> = contents.into_iter().collect();
+        hashmap.insert(name.to_string(), content_map);
+}
