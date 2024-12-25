@@ -65,13 +65,15 @@ pub fn hashmap_to_vec(json: &HashMap<String, HashMap<String, String>>) -> Vec<Ve
 
 
 pub fn vec_to_json(vector: &Vec<Vec<(String, String)>>) -> Vec<Value> {
-    vector.into_iter().map(|vec| {
+    let mut result = vector.into_iter().map(|vec| {
         let mut map = Map::new();
         for (K, V) in vec {
             map.insert(K.clone(), Value::String(V.clone()));
         }
         Value::Object(map)
-    }).collect()
+    }).collect();
+    sort_json(&mut result);
+    result
 }
 
 
@@ -85,8 +87,7 @@ pub fn delete_from_hashmap(map: &mut HashMap<String, HashMap<String, String>>, n
     map.remove(name);
 }
 
-
-pub fn sort_json(vec: &mut Vec<Value>) {
+fn sort_json(vec: &mut Vec<Value>) {
     let id = "__ID";
     vec.sort_by(|a, b| {
         assert!(a.get(id).is_some() && b.get(id).is_some(), "Metadata is missing __ID tags");

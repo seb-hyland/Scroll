@@ -291,7 +291,6 @@ fn laid_in_state() -> Result<()> {
     metadata.push(new_vector);
 
     let mut json_array = json_processor::vec_to_json(&metadata);
-    json_processor::sort_json(&mut json_array);
     let json_string = serde_json::to_string_pretty(&json_array)?;
 
     let file_path = current_path.clone().join(&*new_filename.read()).with_extension("md");
@@ -388,7 +387,6 @@ fn refreeze() -> Result<()> {
     let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(&metadata_json);
 
     let mut json_array = json_processor::vec_to_json(&metadata);
-    json_processor::sort_json(&mut json_array);
     let json_string = serde_json::to_string_pretty(&json_array)?;
 
     let file_path = current_path.clone().join(&*new_filename.read()).with_extension("md");
@@ -435,7 +433,6 @@ fn fall_out_of_window() -> Result<()> {
 
     let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(&metadata_json);
     let mut json_array = json_processor::vec_to_json(&metadata);
-    json_processor::sort_json(&mut json_array);
     let json_string = serde_json::to_string_pretty(&json_array)?;
     write(db_path, json_string)?;
 
