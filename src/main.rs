@@ -18,7 +18,6 @@ mod tools;
 use crate::file_explorer::Viewer;
 use crate::home::Home;
 use crate::new::Creator;
-use crate::new::Editor;
 use crate::files::FileData;
 use crate::tools::custom_panic;
 
@@ -30,10 +29,6 @@ enum Route {
     Home {},
     #[route("/files")]
     Viewer {},
-    #[route("/new")]
-    Creator {},
-    #[route("/editor/:name")]
-    Editor { name: String },
 }
 
 

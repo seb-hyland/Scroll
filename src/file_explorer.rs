@@ -2,7 +2,12 @@ use dioxus::prelude::*;
 use tokio::process::Command;
 use crate::FILE_DATA;
 use crate::Route;
+use crate::new::{Creator, POPUP_GENERATOR};
+use rayon::prelude::*;
 
+
+
+pub static STATUS_HOLDER: GlobalSignal<bool> = Global::new(|| false);
 
 
 async fn marktext(filename: String) {
@@ -46,8 +51,14 @@ fn NewButton() -> Element {
     let component = match attributes {
         Ok(v) => {
             if !v.is_empty() && metadata.is_ok() {
+                *STATUS_HOLDER.write() = true;
                 rsx! {
-		    Link { to: Route::Creator {}, "New" }
+		    button { onclick: move |_| {
+                        POPUP_GENERATOR.write().refresh();
+                        document::eval(r#"
+const dialog = document.getElementById("file-creator");
+dialog.showModal();"#);
+                    }, "New" }
                 }
             }
             else { rsx! {} }
@@ -140,7 +151,10 @@ fn FileTable() -> Element {
                                         onclick: move |_| {
                                             let nav = navigator();
                                             let name = FILE_DATA.write().get_item_name(i);
-                                            nav.push(Route::Editor { name: name.clone() });
+                                            set_editor_environment(name);
+                                            document::eval(r#"
+const dialog = document.getElementById("file-creator");
+dialog.showModal();"#);
                                         },
                                         "⚙"
                                     }
@@ -168,6 +182,22 @@ fn FileTable() -> Element {
     }
 }
 
+fn set_editor_environment(name: String) {
+    assert!(FILE_DATA.read().metadata.is_ok(), "Invalid metadata yet file creator called.");
+
+    let metadata_binding = &FILE_DATA.read().metadata;
+    let metadata_vec = metadata_binding.as_ref().unwrap().par_iter()
+        .find_any(|inner_vec| inner_vec.get(0).map(|v| *v == name).unwrap_or(false));
+
+    assert!(metadata_vec.is_some(), "{}", format!("No metadata found for {name}"));
+    let mut metadata = metadata_vec.unwrap().into_iter()
+        .skip(1)
+        .cloned()
+        .collect();
+
+    POPUP_GENERATOR.write().set_fields(name, metadata, true);
+}
+
 
 
 #[component]
@@ -179,6 +209,10 @@ pub fn Viewer() -> Element {
             Directories {}
 	    br {}
             FileTable {}
+            br {}
+            if *STATUS_HOLDER.read() {
+                Creator {}
+            }
         }
     }
 }

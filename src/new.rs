@@ -19,23 +19,44 @@ use rayon::prelude::*;
 /// - `ready`: associates each attribute in `generator` with its readiness
 /// - `ok`: whether all attributes are ready; i.e., all required attributes are filled in
 #[derive(Clone, Debug)]
-struct FileGenerator {
-    filename: Signal<String>,
-    metadata: Signal<Vec<String>>,
-    state: Signal<CreatorState>,
+pub struct FileGenerator {
+    filename: String,
+    metadata: Vec<String>,
+    state: CreatorState,
+    editing: bool,
 }
+
+pub static POPUP_GENERATOR: GlobalSignal<FileGenerator> = Global::new(|| FileGenerator::new());
+
+impl FileGenerator {
+    pub fn new() -> Self {
+        FileGenerator {
+            filename: String::new(),
+            metadata: vec![String::new(); FILE_DATA.read().attributes.as_ref().unwrap().len()],
+            state: CreatorState::Ok,
+            editing: false,
+            
+        }
+    }
+
+    pub fn set_fields(&mut self, filename: String, metadata: Vec<String>, editing: bool) {
+        self.filename = filename;
+        self.metadata = metadata;
+        self.state = CreatorState::Ok;
+        self.editing = editing;
+    }
+
+    pub fn refresh(&mut self) {
+        *self = Self::new();
+    }
+}
+
 
 
 #[derive(Clone, Debug)]
 enum CreatorState {
     Ok,
     Err { error: Vec<String> },
-}
-
-
-#[derive(Clone, Debug, PartialEq, Props)]
-struct SubmissionType {
-    new: Option<()>,
 }
 
 
@@ -57,7 +78,108 @@ impl CreatorState {
 }
 
 
-fn Form(props: SubmissionType) -> Element {
+
+/// Major component for new file creation UI
+#[component]
+pub fn Creator() -> Element {
+    assert!(FILE_DATA.read().attributes.is_ok(), "Invalid attributes yet file creator called.");
+    let name = POPUP_GENERATOR.read().filename.clone();
+    let editing = POPUP_GENERATOR.read().editing;
+
+    rsx! {
+        div {
+            class: "creator-popup",
+            dialog {
+                id: "file-creator",
+                if editing {
+                    div {
+                        class: "metadata-div",
+                        h1 { "Updating: " u { " {name} " } }
+                        Deleter {}
+                        br {}
+                    }
+                }
+                Form {}
+                br {}
+                button {
+                    onclick: move |_| {
+                        document::eval(r#"
+const dialog = document.getElementById("file-creator");
+dialog.close();"#);
+                    },
+                    class: "close-button",
+                    "Cancel" }
+                Submission {}
+            }
+        }
+    }
+}
+
+
+
+/// Element for naming the new file
+///
+/// # Elements
+/// - `h1`: "File name:" header
+/// - `input`: Field for file name
+/// - `p`: Warning if file name is invalid
+fn FileNamer() -> Element {
+    let file_name = POPUP_GENERATOR.read().filename.clone();
+    let message: &str = "Your file name cannot have whitespace or non-alphanumeric characters (excluding . _ and -).";
+
+    let file_path: PathBuf = {
+        let stub = FILE_DATA.read().current_path.clone().join(&file_name);
+        if file_name.is_empty() {
+            stub
+        } else {
+            stub.with_extension("md")
+        }
+    };
+
+    rsx! {
+        div {
+            class: "metadata-div",
+            h1 { "Creating new file..." }
+            h2 { "File name" }
+            input { value: "{ file_name.clone() }",
+                oninput: move |event| {
+                    let mut trimmed_name = event.value();
+                    if trimmed_name.ends_with(".md") {
+                        trimmed_name = String::from(&trimmed_name[0..&trimmed_name.len() - 4]);
+                    }
+                    POPUP_GENERATOR.write().filename = trimmed_name;
+                } }
+            if is_valid_name(&file_name) {
+                p { "The following file will be created: { file_path.display() }" }
+            } else {
+                p { " { message.to_string() }" }
+            }
+        }
+    }
+}
+
+
+/// Checks if the file name is valid
+///
+/// # Props
+/// - `name` The file name to check
+///
+/// # Returns
+/// - `true` if the file name is valid
+/// - `false` otherwise
+fn is_valid_name(name: &str) -> bool {
+    if name.chars()
+        .any(|c| c.is_whitespace() || !c.is_alphanumeric() && c != '.' && c != '_' && c != '-') ||
+        name.is_empty() {
+            false
+        } else {
+            true
+        }
+}
+
+
+
+fn Form() -> Element {
     let attribute_binding = &FILE_DATA.read().attributes;
     assert!(&attribute_binding.is_ok(), "Invalid attributes, yet file creator called.");
     let attributes_length = attribute_binding.as_ref().unwrap().len();
@@ -65,9 +187,8 @@ fn Form(props: SubmissionType) -> Element {
     error_checker();
 
     rsx! {
-        if props.new.is_some() {
+        if !POPUP_GENERATOR.read().editing {
             FileNamer {}
-            br {}
         }
         for id in 0..attributes_length {
             ElementCreator { id }
@@ -77,10 +198,9 @@ fn Form(props: SubmissionType) -> Element {
 
 
 fn error_checker() {
-    let context = use_context::<FileGenerator>();
-    let name_binding = context.filename;
-    let metadata_binding = context.metadata;
-    let mut state_binding = context.state;
+    let name_binding = POPUP_GENERATOR.read().filename.clone();
+    let metadata_binding = POPUP_GENERATOR.read().metadata.clone();
+    let mut state_binding = &mut POPUP_GENERATOR.write().state;
 
     let attribute_binding = &FILE_DATA.read().attributes;
     assert!(&attribute_binding.is_ok(), "Invalid attributes, yet file creator called.");
@@ -92,21 +212,20 @@ fn error_checker() {
         .collect();
 
     // Start by clearing previous errors
-    state_binding.set(CreatorState::Ok);
+    *state_binding = CreatorState::Ok;
 
     // Check for filename error
-    if !is_valid_name(&name_binding.read()) {
-        state_binding.write().file_error();
+    if !is_valid_name(&name_binding) {
+        state_binding.file_error();
     }
 
     // Check for required elements that are empty
-    assert!(required.len() == metadata_binding.read().len(), "Metadata struct size does not match attribute struct");
     for id in 0..required.len() {
         assert!(required.get(id).is_some() && metadata_binding.get(id).is_some(), "Metadata struct size does not match attribute struct");
         let (is_required, title) = required.get(id).unwrap();
         let metadata = metadata_binding.get(id).unwrap();
         if *is_required && metadata.is_empty() {
-            state_binding.write().component_error(title);
+            state_binding.component_error(title);
         }
     }
 }
@@ -121,13 +240,13 @@ fn ElementCreator(id: usize) -> Element {
     assert!(&attr_ref.is_some(), "{}", format!("Invalid attribute ID: {id}"));
     let element_type = attr_ref.unwrap().1.clone();
 
-    let metadata = use_context::<FileGenerator>().metadata.clone();
+    let metadata = POPUP_GENERATOR.read().metadata.clone();
     assert!(&metadata.get(id).is_some(), "{}", format!("Invalid metadata vector. ID: {id}"));
-    let display = metadata.read().get(id).unwrap().clone();
+    let display = metadata.get(id).unwrap().clone();
 
     // Closure to grab writable reference to metadata item
     let binding = move |value| {
-        let mut binding = use_context::<FileGenerator>();
+        let binding = &mut POPUP_GENERATOR.write();
         let mut write_binding = binding.metadata.get_mut(id).unwrap();
         *write_binding = value;
     };
@@ -141,13 +260,13 @@ fn ElementCreator(id: usize) -> Element {
 
     rsx! {
         div {
-            h1 { "{ title }" }
+            class: "metadata-div",
+            h2 { "{ title }" }
             match element_type {
                 InputField::String { .. } => {
                     rsx! {
                         textarea {
                             rows: "4",
-                            cols: "50",
                             value: "{ display }",
                             oninput: move |event| { binding(event.value()); } }
                     }
@@ -192,7 +311,7 @@ fn ElementCreator(id: usize) -> Element {
                             },
                         }
                         button { onclick: move |_| { binding(String::new()); }, "Clear" }
-                        p { "Selected: { display }" }
+                        p { b {"Selected: "} " { display }" }
                     }
                 }
             }
@@ -202,60 +321,74 @@ fn ElementCreator(id: usize) -> Element {
 
 
 
-/// Element for naming the new file
-///
-/// # Elements
-/// - `h1`: "File name:" header
-/// - `input`: Field for file name
-/// - `p`: Warning if file name is invalid
-fn FileNamer() -> Element {
-    let mut file_name = use_context::<FileGenerator>().filename;
-    let message: &str = "Your file name cannot have whitespace or non-alphanumeric characters (excluding . _ and -).";
-
-    let file_path: PathBuf = {
-        let stub = FILE_DATA.read().current_path.clone().join(file_name());
-        if file_name().is_empty() {
-            stub
-        } else {
-            stub.with_extension("md")
-        }
-    };
-
-    rsx! {
-        h1 { "File name: " }
-        input { value: "{ file_name() }",
-            oninput: move |event| {
-                let mut trimmed_name = event.value();
-                if trimmed_name.ends_with(".md") {
-                    trimmed_name = String::from(&trimmed_name[0..&trimmed_name.len() - 4]);
-                }
-                file_name.set(trimmed_name);
-            } }
-        if is_valid_name(&file_name.read()) {
-            p { "The following file will be created: { file_path.display() }" }
-        } else {
-            p { " { message.to_string() }" }
-        }
+fn Submission() -> Element {
+    let state = POPUP_GENERATOR.read().state.clone();
+    match state {
+        CreatorState::Ok => {
+            match POPUP_GENERATOR.read().editing {
+                false => rsx! { Eternity {} },
+                true => rsx! { Rebase {} },
+            }
+        },
+        CreatorState::Err { error } => {
+            let output_string = error.join(", ");
+            rsx! {
+                h3 { "⚠️ WARNING!" }
+                p { "The following required fields are empty or invalid: { output_string }" }
+            }
+        },
     }
 }
 
-/// Checks if the file name is valid
-///
-/// # Props
-/// - `name` The file name to check
-///
-/// # Returns
-/// - `true` if the file name is valid
-/// - `false` otherwise
-fn is_valid_name(name: &str) -> bool {
-    if name.chars()
-        .any(|c| c.is_whitespace() || !c.is_alphanumeric() && c != '.' && c != '_' && c != '-') ||
-        name.is_empty() {
-            false
-        } else {
-            true
-        }
+
+fn Eternity() -> Element {
+    let nav = navigator();
+    let mut message = use_signal(|| String::new());
+    rsx! {
+        button {
+            onclick: move |_| {
+                match laid_in_state() {
+		    Ok(()) => {
+		        FILE_DATA.write().refresh();
+                        document::eval(r#"
+const dialog = document.getElementById("file-creator");
+dialog.close();"#);
+		    }
+		    Err(e) => {
+		        message.set(e.to_string());
+		    }
+	        }},
+            class: "creation-button",
+		 "Create" }
+	p { " { message() } " }
+    } 
 }
+
+
+fn Rebase() -> Element {
+    let nav = navigator();
+    let mut message = use_signal(|| String::new());
+    rsx! {
+        button {
+            class: "creation-button",
+            onclick: move |_| {
+            match refreeze() {
+		Ok(()) => {
+		    FILE_DATA.write().refresh();
+                        document::eval(r#"
+const dialog = document.getElementById("file-creator");
+dialog.close();"#);
+		}
+		Err(e) => {
+		    message.set(e.to_string());
+		}
+	    }},
+		 "Update" }
+	" { message() } "
+    } 
+}
+
+
 
 /// Writes the file attributes to a database and creates the file
 ///
@@ -266,7 +399,7 @@ fn is_valid_name(name: &str) -> bool {
 ///
 /// Gets file attributes from [`FileGenerator`]
 fn laid_in_state() -> Result<()> {
-    let context = use_context::<FileGenerator>();
+    let context = &POPUP_GENERATOR;
     let current_path = &FILE_DATA.read().current_path;
     let db_path = current_path.join(".database.json");
     assert!(db_path.exists(), "Database does not exist yet file creator called");
@@ -280,12 +413,12 @@ fn laid_in_state() -> Result<()> {
     let metadata_json = metadata_json_binding.as_ref().unwrap();
     let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(metadata_json);
 
-    let new_filename = context.filename;
-    let new_metadata = context.metadata;
+    let new_filename = &context.read().filename;
+    let new_metadata = &context.read().metadata;
 
-    let mut new_vector = vec![("__ID".to_string(), new_filename.read().clone())];
-    assert!(attributes.len() == new_metadata.read().len(), "Attribute and metadata vectors do not match");
-    for ((title, _), metadata) in attributes.iter().zip(new_metadata.read().iter()) {
+    let mut new_vector = vec![("__ID".to_string(), new_filename.clone())];
+    assert!(attributes.len() == new_metadata.len(), "Attribute and metadata vectors do not match");
+    for ((title, _), metadata) in attributes.iter().zip(new_metadata.iter()) {
         new_vector.push((title.clone(), metadata.clone()));
     }
     metadata.push(new_vector);
@@ -293,7 +426,7 @@ fn laid_in_state() -> Result<()> {
     let mut json_array = json_processor::vec_to_json(&metadata);
     let json_string = serde_json::to_string_pretty(&json_array)?;
 
-    let file_path = current_path.clone().join(&*new_filename.read()).with_extension("md");
+    let file_path = current_path.clone().join(&*new_filename).with_extension("md");
     File::create(file_path)?;
     write(db_path, json_string)?;
 
@@ -301,67 +434,8 @@ fn laid_in_state() -> Result<()> {
 }
 
 
-fn Submission(props: SubmissionType) -> Element {
-    let binding = use_context::<FileGenerator>().state;
-    let state = binding.read().clone();
-    match state {
-        CreatorState::Ok => {
-            match props.new {
-                Some(_) => rsx! { Eternity {} },
-                None => rsx! { Rebase {} },
-            }
-        },
-        CreatorState::Err { error } => {
-            let output_string = error.join(", ");
-            rsx! {
-                "WARNING: The following fields are empty or invalid: { output_string }"
-            }
-        },
-    }
-}
-
-
-fn Eternity() -> Element {
-    let nav = navigator();
-    let mut message = use_signal(|| String::new());
-    rsx! {
-        button { onclick: move |_| {
-            match laid_in_state() {
-		Ok(()) => {
-		    FILE_DATA.write().refresh();
-		    nav.push(Route::Viewer {});
-		}
-		Err(e) => {
-		    message.set(e.to_string());
-		}
-	    }},
-		 "Create" }
-	" { message() } "
-    } 
-}
-
-
-fn Rebase() -> Element {
-    let nav = navigator();
-    let mut message = use_signal(|| String::new());
-    rsx! {
-        button { onclick: move |_| {
-            match refreeze() {
-		Ok(()) => {
-		    FILE_DATA.write().refresh();
-		    nav.push(Route::Viewer {});
-		}
-		Err(e) => {
-		    message.set(e.to_string());
-		}
-	    }},
-		 "Update" }
-	" { message() } "
-    } 
-}
-
 fn refreeze() -> Result<()> {
-    let context = use_context::<FileGenerator>();
+    let context = POPUP_GENERATOR.read();
     let current_path = &FILE_DATA.read().current_path;
     let db_path = current_path.join(".database.json");
     assert!(db_path.exists(), "Database does not exist yet file creator called");
@@ -374,22 +448,22 @@ fn refreeze() -> Result<()> {
     assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
     let mut metadata_json = metadata_json_binding.unwrap();
 
-    let new_filename = context.filename;
-    let new_metadata = context.metadata;
+    let new_filename = &context.filename;
+    let new_metadata = &context.metadata;
 
-    let mut new_vector = vec![("__ID".to_string(), new_filename.read().clone())];
-    assert!(attributes.len() == new_metadata.read().len(), "Attribute and metadata vectors do not match");
-    for ((title, _), metadata) in attributes.iter().zip(new_metadata.read().iter()) {
+    let mut new_vector = vec![("__ID".to_string(), new_filename.clone())];
+    assert!(attributes.len() == new_metadata.len(), "Attribute and metadata vectors do not match");
+    for ((title, _), metadata) in attributes.iter().zip(new_metadata.iter()) {
         new_vector.push((title.clone(), metadata.clone()));
     }
 
-    json_processor::update_json_hashmap(&mut metadata_json, &new_filename.read(), new_vector);
+    json_processor::update_json_hashmap(&mut metadata_json, &new_filename, new_vector);
     let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(&metadata_json);
 
     let mut json_array = json_processor::vec_to_json(&metadata);
     let json_string = serde_json::to_string_pretty(&json_array)?;
 
-    let file_path = current_path.clone().join(&*new_filename.read()).with_extension("md");
+    let file_path = current_path.clone().join(&new_filename).with_extension("md");
     File::create(file_path)?;
     write(db_path, json_string)?;
 
@@ -397,16 +471,21 @@ fn refreeze() -> Result<()> {
 }
 
 
+
 #[component]
 fn Deleter() -> Element {
     let nav = navigator();
     let mut message = use_signal(|| String::new());
     rsx! {
-        button { onclick: move |_| {
+        button {
+            class: "close-button",
+            onclick: move |_| {
             match fall_out_of_window() {
 		Ok(()) => {
 		    FILE_DATA.write().refresh();
-		    nav.push(Route::Viewer {});
+                        document::eval(r#"
+const dialog = document.getElementById("file-creator");
+dialog.close();"#);
 		}
 		Err(e) => {
 		    message.set(e.to_string());
@@ -414,84 +493,30 @@ fn Deleter() -> Element {
 	    }},
             "🗑️ Delete this file and its associated data"
         }
+        p { "{ message }"}
     }
 }
 
 
 fn fall_out_of_window() -> Result<()> {
-    let context = use_context::<FileGenerator>();
+    let context = POPUP_GENERATOR.read();
     let current_path = &FILE_DATA.read().current_path;
     let db_path = current_path.join(".database.json");
     assert!(db_path.exists(), "Database does not exist yet file creator called");
     
-    let filename = context.filename;
+    let filename = &context.filename;
 
     let metadata_json_binding = json_processor::get_json_hashmap(&FILE_DATA.read().current_path);
     assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
     let mut metadata_json = metadata_json_binding.unwrap();
-    json_processor::delete_from_hashmap(&mut metadata_json, &filename.read());
+    json_processor::delete_from_hashmap(&mut metadata_json, &filename);
 
     let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(&metadata_json);
     let mut json_array = json_processor::vec_to_json(&metadata);
     let json_string = serde_json::to_string_pretty(&json_array)?;
     write(db_path, json_string)?;
 
-    let file_path = current_path.clone().join(&*filename.read()).with_extension("md");
+    let file_path = current_path.clone().join(filename).with_extension("md");
     remove_file(file_path)?;
     Ok(()) 
-}
-
-
-/// Major component for new file creation UI
-#[component]
-pub fn Creator() -> Element {
-    assert!(FILE_DATA.read().attributes.is_ok(), "Invalid attributes yet file creator called.");
-
-    let _attr_creator = use_context_provider(|| FileGenerator {
-        filename: Signal::new(String::new()),
-        metadata: Signal::new(vec![String::new(); FILE_DATA.read().attributes.as_ref().unwrap().len()]),
-        state: Signal::new(CreatorState::Ok),
-    });
-
-    rsx! {
-        div {
-            Form { new: Some(()) }
-            br {}
-            Submission { new: Some(()) }
-            Link { to: Route::Viewer {}, "Cancel" }
-        }
-    }
-}
-
-
-#[component]
-pub fn Editor(name: String) -> Element {
-    assert!(FILE_DATA.read().metadata.is_ok(), "Invalid metadata yet file creator called.");
-    let metadata_binding = &FILE_DATA.read().metadata;
-    let metadata_vec = metadata_binding.as_ref().unwrap().par_iter()
-        .find_any(|inner_vec| inner_vec.get(0).map(|v| *v == name).unwrap_or(false));
-    assert!(metadata_vec.is_some(), "{}", format!("No metadata found for {name}"));
-    let mut metadata = metadata_vec.unwrap().into_iter()
-        .skip(1)
-        .cloned()
-        .collect();
-
-    let _attr_creator = use_context_provider(|| FileGenerator {
-        filename: Signal::new(name.clone()),
-        metadata: Signal::new(metadata),
-        state: Signal::new(CreatorState::Ok),
-    });
-    
-    rsx! {
-        div {
-            h1 { "Updating metadata for {name} "}
-            br {}
-            Deleter {}
-            br {}
-            Form {}
-            br {}
-            Submission {}
-            Link { to: Route::Viewer {}, "Cancel" }
-        }
-    }
 }
