@@ -9,9 +9,6 @@
 #![feature(panic_payload_as_str)]
 use dioxus::prelude::*;
 use dioxus::desktop::{Config, WindowBuilder};
-use std::{env::current_exe, panic, process::exit};
-use native_dialog::{MessageDialog, MessageType};
-use tokio::process::Command;
 
 mod file_explorer;
 mod home;
@@ -23,6 +20,7 @@ use crate::home::Home;
 use crate::new::Creator;
 use crate::new::Editor;
 use crate::files::FileData;
+use crate::tools::custom_panic;
 
 
 
@@ -41,21 +39,9 @@ enum Route {
 
 pub static FILE_DATA: GlobalSignal<FileData> = Global::new(|| FileData::new());
 
-
-async fn restart_scroll() {
-    let current_exe = match current_exe() {
-        Ok(v) => v,
-        Err(_) => {
-            exit(1);
-        },
-    };
-    match Command::new(current_exe).spawn() {
-        Ok(v) => v,
-        Err(_) => {
-            exit(1);
-        }
-    };
-}
+static CSS: Asset = asset!("/assets/main.css");
+static DARK_CSS: Asset = asset!("/assets/dark.css");
+static INTER_API: &str = "fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap";
 
 
 fn main() {
@@ -65,30 +51,7 @@ fn main() {
             .with_title("Scroll"))
         .with_menu(None);
 
-    // Override default panic behaviour in favour of a popup window
-    panic::set_hook(Box::new(|panic_info| {
-        let message: &str = match panic_info.payload_as_str() {
-            Some(s) => s,
-            None => "Unknown error occured",
-        };
-        let location: String = match panic_info.location() {
-            Some(l) => format!("File \"{}\" at {}:{}", l.file(), l.line(), l.column()),
-            None => "Unknown location".to_string(),
-        };
-        let result = MessageDialog::new()
-            .set_title("Scroll")
-            .set_type(MessageType::Warning)
-            .set_text(&format!(
-                "An error has occured. Please contact a lead with the following debug trace:\n\nError: {message}\nLocation: {location}\n\n\nWould you like to restart Scroll?"))
-            .show_confirm()
-            .unwrap();
-        if result {
-	    tokio::spawn(async move {
-		restart_scroll().await;  
-            });
-        }
-        exit(1);
-    }));
+    custom_panic::set_custom_panic();
 
     dioxus::LaunchBuilder::desktop().with_cfg(cfg).launch(App)
 }
@@ -97,6 +60,9 @@ fn main() {
 #[component]
 fn App() -> Element {
     rsx! {
+	document::Stylesheet { href: CSS },
+	document::Stylesheet { href: DARK_CSS },
+        document::Style { href: INTER_API },
         Router::<Route> {}
     }
 }

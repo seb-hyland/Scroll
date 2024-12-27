@@ -2,7 +2,7 @@
 use crate::Route;
 use crate::tools::{json_processor, scroll_processor, compare};
 use dioxus::prelude::*;
-use eyre::{Report, Result};
+use eyre::Result;
 use homedir::my_home;
 use std::{
     cmp::Ordering,
@@ -33,7 +33,7 @@ pub struct FileData {
     pub attributes: Result<Vec<(String, InputField)>, String>,
     pub breadcrumbs: Vec<(PathBuf, String)>,
     pub selected_file: PathBuf,
-    ordering: fn(&Vec<String>, &Vec<String>) -> Ordering,
+    pub ordering: Order,
 }
 
 
@@ -61,6 +61,22 @@ impl InputField {
 
 
 
+#[derive(Clone, Debug)]
+pub struct Order {
+    direction: SortDirection,
+    id: usize,
+}
+
+
+
+#[derive(Clone, Debug)]
+enum SortDirection {
+    Increasing,
+    Decreasing,
+}
+
+
+
 impl FileData {
     pub fn new() -> Self {
         let mut files = Self {
@@ -71,7 +87,7 @@ impl FileData {
             directories: Vec::new(),
             metadata: Ok(Vec::new()),
             breadcrumbs: Vec::new(),
-            ordering: compare::alphabetical_inc,
+            ordering: Order {direction: SortDirection::Decreasing, id: 0},
         };
         files.refresh();
         files
@@ -99,7 +115,14 @@ impl FileData {
             Ok(Vec::new())
         };
         if let Ok(ref mut m) = &mut self.metadata {
-            m.sort_by(self.ordering);
+            match self.ordering.direction {
+                SortDirection::Increasing => {
+                    m.sort_by(|a, b| compare::increasing(a, b, self.ordering.id));
+                }
+                SortDirection::Decreasing => {
+                    m.sort_by(|a, b| compare::decreasing(a, b, self.ordering.id));
+                }
+            }
         }
     }
 
