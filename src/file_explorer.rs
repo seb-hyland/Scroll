@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 use tokio::process::Command;
 use crate::FILE_DATA;
 use crate::Route;
-use crate::new::{Creator, POPUP_GENERATOR};
+use crate::new::{Creator, POPUP_GENERATOR, name_ser, name_deser};
 use rayon::prelude::*;
 
 
@@ -29,7 +29,7 @@ fn Breadcrumbs() -> Element {
 		for (i, (path, name)) in breadcrumbs.into_iter().enumerate() {
                     button {
 			onclick: move |_| FILE_DATA.write().goto(path.clone()),   
-			"{name}"
+			"{ name }"
                     }
                     if i < FILE_DATA.read().breadcrumbs.len() - 1 {
 			span { "/" }
@@ -142,7 +142,7 @@ fn FileTable() -> Element {
 					        marktext(filepath.to_string_lossy().into_owned()).await;  
                                             });
 				        },
-				        "{ data.get(0).unwrap() }"
+				        "{ name_deser(&data.get(0).unwrap()) }"
                                     }
                                 }
                                 td {

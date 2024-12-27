@@ -83,7 +83,7 @@ impl CreatorState {
 #[component]
 pub fn Creator() -> Element {
     assert!(FILE_DATA.read().attributes.is_ok(), "Invalid attributes yet file creator called.");
-    let name = POPUP_GENERATOR.read().filename.clone();
+    let name = &POPUP_GENERATOR.read().filename.clone();
     let editing = POPUP_GENERATOR.read().editing;
 
     rsx! {
@@ -94,7 +94,7 @@ pub fn Creator() -> Element {
                 if editing {
                     div {
                         class: "metadata-div",
-                        h1 { "Updating: " u { " {name} " } }
+                        h1 { "Updating: " u { "{ name_deser(name) }" } }
                         Deleter {}
                         br {}
                     }
@@ -125,10 +125,10 @@ dialog.close();"#);
 /// - `p`: Warning if file name is invalid
 fn FileNamer() -> Element {
     let file_name = POPUP_GENERATOR.read().filename.clone();
-    let message: &str = "Your file name cannot have whitespace or non-alphanumeric characters (excluding . _ and -).";
+    let message: &str = "Your file name cannot have non-alphanumeric characters (excluding '-') or be empty.";
 
     let file_path: PathBuf = {
-        let stub = FILE_DATA.read().current_path.clone().join(&file_name);
+        let stub = FILE_DATA.read().current_path.clone().join(&name_ser(&file_name));
         if file_name.is_empty() {
             stub
         } else {
@@ -169,7 +169,7 @@ fn FileNamer() -> Element {
 /// - `false` otherwise
 fn is_valid_name(name: &str) -> bool {
     if name.chars()
-        .any(|c| c.is_whitespace() || !c.is_alphanumeric() && c != '.' && c != '_' && c != '-') ||
+        .any(|c| !c.is_alphanumeric() && c != '-' && c != ' ') ||
         name.is_empty() {
             false
         } else {
@@ -177,6 +177,13 @@ fn is_valid_name(name: &str) -> bool {
         }
 }
 
+pub fn name_ser(name: &str) -> String {
+    name.replace(" ", "_")
+}
+
+pub fn name_deser(name: &str) -> String {
+    name.replace("_", " ")
+}
 
 
 fn Form() -> Element {
@@ -413,7 +420,8 @@ fn laid_in_state() -> Result<()> {
     let metadata_json = metadata_json_binding.as_ref().unwrap();
     let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(metadata_json);
 
-    let new_filename = &context.read().filename;
+    let mut new_filename = context.read().filename.clone();
+    new_filename = name_ser(&new_filename);
     let new_metadata = &context.read().metadata;
 
     let mut new_vector = vec![("__ID".to_string(), new_filename.clone())];
@@ -426,7 +434,7 @@ fn laid_in_state() -> Result<()> {
     let mut json_array = json_processor::vec_to_json(&metadata);
     let json_string = serde_json::to_string_pretty(&json_array)?;
 
-    let file_path = current_path.clone().join(&*new_filename).with_extension("md");
+    let file_path = current_path.clone().join(&new_filename).with_extension("md");
     File::create(file_path)?;
     write(db_path, json_string)?;
 
