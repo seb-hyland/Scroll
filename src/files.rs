@@ -5,7 +5,6 @@ use dioxus::prelude::*;
 use eyre::Result;
 use homedir::my_home;
 use std::{
-    cmp::Ordering,
     fs::{read_to_string, read_dir},
     path::PathBuf,
     sync::LazyLock,
@@ -15,7 +14,7 @@ use rayon::prelude::*;
 
 
 pub static DOC_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
-    assert!(my_home().is_ok() && my_home().unwrap().is_some(), "Home directory could not be found");
+    assert!(my_home().is_ok() && my_home().unwrap().is_some(), "User home directory could not be found");
     my_home()
         .unwrap()
         .unwrap()
@@ -41,8 +40,8 @@ pub struct FileData {
 pub enum InputField {
     String { req: bool },
     Date { req: bool },
-    One { options: Vec<String>, req: bool },
-    Multi { options: Vec<String>, req: bool },
+    One { id: String, req: bool },
+    Multi { id: String, req: bool },
 }
 
 

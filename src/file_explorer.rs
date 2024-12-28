@@ -1,8 +1,11 @@
 use dioxus::prelude::*;
 use tokio::process::Command;
-use crate::FILE_DATA;
-use crate::Route;
-use crate::new::{Creator, POPUP_GENERATOR, name_ser, name_deser};
+use crate::{
+    FILE_DATA,
+    files::InputField,
+    new::{Creator, POPUP_GENERATOR, name_deser},
+    tools::scroll_processor,
+};
 use rayon::prelude::*;
 
 
@@ -112,9 +115,19 @@ fn FileTable() -> Element {
 		        tr {
 			    th { "" }
 			    th { "" }
-                            for attribute_name in attributes.iter() {
+                            for (attribute_name, attribute_type) in attributes.iter() {
 			        th {
-                                    "{attribute_name.0}"
+                                    "{attribute_name}"
+                                    match attribute_type {
+                                        InputField::String { .. } => rsx! {},
+                                        InputField::Date { .. }=> rsx! {},
+                                        InputField::One { id, .. } => rsx! {
+                                            PopupOpener { id: id }
+                                        },
+                                        InputField::Multi { id, .. } => rsx! {
+                                            PopupOpener { id: id }
+                                        }
+                                    }
 			        }
                             }
 		        }
@@ -199,10 +212,86 @@ fn set_editor_environment(name: String) {
     POPUP_GENERATOR.write().set_fields(name, metadata, true);
 }
 
+#[derive(Clone, Debug)]
+struct CurrentDB(Signal<String>);
+
+#[component]
+fn DBPopup() -> Element {
+    let db_binding = use_context::<CurrentDB>().0;
+    let db_name = db_binding.read().clone();
+    println!{"Name: {:?}", db_name};
+    let db_content = scroll_processor::collect_table(&db_name);
+    println!{"Name: {:?}", db_content};
+    assert!(db_content.is_ok(), "DB Malformed!");
+    let content = db_content.unwrap();
+    let first = content.get(0).unwrap();
+    rsx! {
+        dialog {
+            id: "db-popup",
+            class: "creator-popup",
+            div {
+                class: "metadata-div",
+                h1 { "Database: " u { "{db_name}" } }
+                div {
+                    class: "table-div",
+                    table {
+                        thead {
+                            tr {
+                                for title in first.iter() {
+                                    th {
+                                        "{title}"
+                                    }
+                                }
+                            }
+                        }
+                        tbody {
+                            for row in content.iter().skip(1) {
+                                tr {
+                                    for cell in row.iter() {
+                                        td {
+                                            "{cell}"
+                                        }
+                                    } 
+                                }
+                            }
+                        }
+                    }
+                }
+                button {
+                    onclick: move |_| {
+                        document::eval(r#"
+const dialog = document.getElementById("db-popup");
+dialog.close();"#);
+                    },
+                    "Close"
+                }
+            }
+        }
+    }
+}
+
+
+
+#[component]
+pub fn PopupOpener(id: String) -> Element {
+    rsx! {
+        button {
+            onclick: move |_| {
+                *use_context::<CurrentDB>().0.write() = id.clone();
+                document::eval(r#"
+const dialog = document.getElementById("db-popup");
+dialog.showModal();"#);
+            },
+            "?"
+        }
+    }
+}
+
 
 
 #[component]
 pub fn Viewer() -> Element {
+    use_context_provider(|| CurrentDB(Signal::new("Members".to_string())));
     rsx! {
 	div {
             Breadcrumbs {}
@@ -212,6 +301,7 @@ pub fn Viewer() -> Element {
             FileTable {}
             br {}
             Creator {}
+            DBPopup {}
         }
     }
 }

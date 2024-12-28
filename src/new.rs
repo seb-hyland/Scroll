@@ -1,14 +1,15 @@
-use crate::Route;
-use crate::FILE_DATA;
-use crate::files::InputField;
-use crate::tools::json_processor;
+use crate::{
+    FILE_DATA,
+    files::InputField,
+    file_explorer::PopupOpener,
+    tools::{json_processor, scroll_processor}
+};
 use dioxus::prelude::*;
 use eyre::Result;
 use std::{
     fs::{File, write, remove_file},
     path::PathBuf,
 };
-use rayon::prelude::*;
 
 
 /// A struct that holds data while generating a new file
@@ -285,7 +286,8 @@ fn ElementCreator(id: usize) -> Element {
                         button { onclick: move |_| { binding(String::new()); }, "Clear" },
                     }
                 },
-                InputField::One { options, .. } => {
+                InputField::One { id, .. } => {
+                    let options = scroll_processor::collect_options(&id).unwrap();
                     rsx! {
                         select {
                             oninput: move |event| { binding(event.value()); },
@@ -294,9 +296,11 @@ fn ElementCreator(id: usize) -> Element {
                                 option { value: "{ option }", selected: *option == display, "{ option }" }
                             }
                         }
+                        PopupOpener { id: id }
                     }
                 },
-                InputField::Multi { options, .. } => {
+                InputField::Multi { id, .. } => {
+                    let options = scroll_processor::collect_options(&id).unwrap();
                     rsx! {
                         select {
                             oninput: move |event| {
@@ -313,9 +317,10 @@ fn ElementCreator(id: usize) -> Element {
                             option { disabled: true, selected: true, "Add..." }
                             for option in options.iter() {
                                 option { value: "{ option }", "{ option }" }
-                            },
+                            }
                         }
                         button { onclick: move |_| { binding(String::new()); }, "Clear" }
+                        PopupOpener { id: id }
                         p { b {"Selected: "} " { display }" }
                     }
                 }
@@ -604,11 +609,11 @@ dialog.close();"#);
                             match rename(original.clone(), new_name.read().clone()) {
 		                Ok(()) => {
 		                    FILE_DATA.write().refresh();
-                                    POPUP_GENERATOR.write().filename = new_name.read().clone();
-                                    println!("{:?}", POPUP_GENERATOR);
                                     document::eval(r#"
-const dialog = document.getElementById("renamer");
-dialog.close();"#);
+                                                      const dialog = document.getElementById("renamer");
+                                                      dialog.close();
+                                                      const parent = document.getElementById("file-creator");
+                                                      parent.close()"#);
 		                }
 		                Err(e) => {
 		                    err_message.set(e.to_string());
