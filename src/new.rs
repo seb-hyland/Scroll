@@ -96,18 +96,19 @@ pub fn Creator() -> Element {
                         class: "metadata-div",
                         h1 { "Updating: " u { "{ name_deser(name) }" } }
                         Deleter {}
+                        Renamer {}
                         br {}
                     }
                 }
                 Form {}
                 br {}
                 button {
+                    class: "close-button",
                     onclick: move |_| {
                         document::eval(r#"
 const dialog = document.getElementById("file-creator");
 dialog.close();"#);
                     },
-                    class: "close-button",
                     "Cancel" }
                 Submission {}
             }
@@ -141,13 +142,10 @@ fn FileNamer() -> Element {
             class: "metadata-div",
             h1 { "Creating new file..." }
             h2 { "File name" }
-            input { value: "{ file_name.clone() }",
+            input {
+                value: "{ file_name.clone() }",
                 oninput: move |event| {
-                    let mut trimmed_name = event.value();
-                    if trimmed_name.ends_with(".md") {
-                        trimmed_name = String::from(&trimmed_name[0..&trimmed_name.len() - 4]);
-                    }
-                    POPUP_GENERATOR.write().filename = trimmed_name;
+                    POPUP_GENERATOR.write().filename = event.value();
                 } }
             if is_valid_name(&file_name) {
                 p { "The following file will be created: { file_path.display() }" }
@@ -353,6 +351,7 @@ fn Eternity() -> Element {
     let mut message = use_signal(|| String::new());
     rsx! {
         button {
+            class: "creation-button",
             onclick: move |_| {
                 match laid_in_state() {
 		    Ok(()) => {
@@ -365,9 +364,8 @@ dialog.close();"#);
 		        message.set(e.to_string());
 		    }
 	        }},
-            class: "creation-button",
 		 "Create" }
-	p { " { message() } " }
+	p { class: "warning-msg", " { message.read() } " }
     } 
 }
 
@@ -390,8 +388,8 @@ dialog.close();"#);
 		    message.set(e.to_string());
 		}
 	    }},
-		 "Update" }
-	" { message() } "
+	    "Update" }
+	p { class: "warning-msg", "{ message.read() }" }
     } 
 }
 
@@ -415,7 +413,7 @@ fn laid_in_state() -> Result<()> {
     assert!(attributes_binding.is_ok(), "Invalid attributes, yet file creator called");
     let attributes = attributes_binding.as_ref().unwrap();
 
-    let metadata_json_binding = json_processor::get_json_hashmap(&FILE_DATA.read().current_path);
+    let metadata_json_binding = json_processor::get_json_hashmap(&db_path);
     assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
     let metadata_json = metadata_json_binding.as_ref().unwrap();
     let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(metadata_json);
@@ -452,11 +450,12 @@ fn refreeze() -> Result<()> {
     assert!(attributes_binding.is_ok(), "Invalid attributes, yet file creator called");
     let attributes = attributes_binding.as_ref().unwrap();
 
-    let metadata_json_binding = json_processor::get_json_hashmap(&FILE_DATA.read().current_path);
+    let metadata_json_binding = json_processor::get_json_hashmap(&db_path);
     assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
     let mut metadata_json = metadata_json_binding.unwrap();
 
-    let new_filename = &context.filename;
+    let filename_binding = &context.filename;
+    let new_filename = name_ser(filename_binding);
     let new_metadata = &context.metadata;
 
     let mut new_vector = vec![("__ID".to_string(), new_filename.clone())];
@@ -501,7 +500,9 @@ dialog.close();"#);
 	    }},
             "🗑️ Delete this file and its associated data"
         }
-        p { "{ message }"}
+        if !message.read().is_empty() {
+            p { class: "warning-msg", "{ message.read() }"}
+        }
     }
 }
 
@@ -512,9 +513,10 @@ fn fall_out_of_window() -> Result<()> {
     let db_path = current_path.join(".database.json");
     assert!(db_path.exists(), "Database does not exist yet file creator called");
     
-    let filename = &context.filename;
+    let filename_binding = &context.filename;
+    let filename = &name_ser(filename_binding);
 
-    let metadata_json_binding = json_processor::get_json_hashmap(&FILE_DATA.read().current_path);
+    let metadata_json_binding = json_processor::get_json_hashmap(&db_path);
     assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
     let mut metadata_json = metadata_json_binding.unwrap();
     json_processor::delete_from_hashmap(&mut metadata_json, &filename);
@@ -526,5 +528,119 @@ fn fall_out_of_window() -> Result<()> {
 
     let file_path = current_path.clone().join(filename).with_extension("md");
     remove_file(file_path)?;
+    Ok(()) 
+}
+
+
+
+#[component]
+fn Renamer() -> Element {
+    let current_name = POPUP_GENERATOR.read().filename.clone();
+    rsx! {
+        button {
+            class: "creation-button",
+            onclick: move |_| {
+                document::eval(r#"
+const dialog = document.getElementById("renamer");
+dialog.showModal();"#);
+	    },
+            "✏️ Rename this file" }
+        RenamerPopup { original: current_name }
+    }
+}
+
+
+#[component]
+fn RenamerPopup(original: String) -> Element {
+    let mut new_name: Signal<String> = use_signal(|| name_deser(&original));
+    let original_copy = original.clone();
+    let new_path: PathBuf = {
+        let stub = FILE_DATA.read().current_path.clone().join(&name_ser(&new_name.read()));
+        if new_name.read().is_empty() {
+            stub
+        } else {
+            stub.with_extension("md")
+        }
+    };
+    let valid_name: bool = is_valid_name(&new_name.read());
+
+    let message: &str = "Your file name cannot have non-alphanumeric characters (excluding '-') or be empty.";
+    let mut err_message = use_signal(|| String::new());
+
+    rsx! {
+        dialog {
+            id: "renamer",
+            div {
+                class: "renamer-div",
+                h1 { "Rename file..." }
+                input {
+                    value: "{ new_name.read() }",
+                    oninput: move |event| {
+                        new_name.set(event.value());
+                    } }
+                
+                if valid_name {
+                    p { "The current file will be renamed to: { new_path.display() }" }
+                } else {
+                    p { " { message }" }
+                }
+                
+                br {}
+                
+                button {
+                    class: "close-button",
+                    onclick: move |_| {
+                        new_name.set(original_copy.clone());
+                        document::eval(r#"
+const dialog = document.getElementById("renamer");
+dialog.close();"#);
+                    },
+                    "Cancel" }
+                
+                if valid_name {
+                    button {
+                        class: "creation-button",
+                        onclick: move |_| {
+                            match rename(original.clone(), new_name.read().clone()) {
+		                Ok(()) => {
+		                    FILE_DATA.write().refresh();
+                                    POPUP_GENERATOR.write().filename = new_name.read().clone();
+                                    println!("{:?}", POPUP_GENERATOR);
+                                    document::eval(r#"
+const dialog = document.getElementById("renamer");
+dialog.close();"#);
+		                }
+		                Err(e) => {
+		                    err_message.set(e.to_string());
+		                }
+	                    }},
+		        "Rename" }
+                    p { "{ err_message }" }
+                }
+            }
+        }
+    }
+}
+
+
+fn rename(old_name: String, new_name: String) -> Result<()> {
+    let current_path = &FILE_DATA.read().current_path;
+    let db_path = current_path.join(".database.json");
+    assert!(db_path.exists(), "Database does not exist yet file creator called");
+    
+    let metadata_json_binding = json_processor::get_json_hashmap(&db_path);
+    assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
+    let mut metadata_json = metadata_json_binding.unwrap();
+    json_processor::rename_in_hashmap(&mut metadata_json, &old_name, &name_ser(&new_name));
+
+    let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(&metadata_json);
+    let mut json_array = json_processor::vec_to_json(&metadata);
+    let json_string = serde_json::to_string_pretty(&json_array)?;
+
+    let old_path = current_path.join(old_name).with_extension("md");
+    let new_path = current_path.join(name_ser(&new_name)).with_extension("md");
+
+    std::fs::rename(old_path, new_path)?;
+    write(db_path, json_string)?;
     Ok(()) 
 }

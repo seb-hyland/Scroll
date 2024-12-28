@@ -1,10 +1,11 @@
 use crate::files::{DOC_DIR, InputField};
-use std::{path::PathBuf, fs::read_to_string};
+use std::{collections::HashMap, path::PathBuf, fs::{read_to_string, read_dir}};
 use eyre::Result;
 use nom::{
     bytes::complete::{tag, take_until},
     error::ErrorKind,
     sequence::delimited};
+use rayon::prelude::*;
 
 
 
@@ -88,4 +89,43 @@ fn parse_list(list_id: &str) -> Result<Vec<String>> {
     Ok(file_contents.lines()
         .map(String::from)
         .collect())
+}
+
+
+pub fn parse_all_databases() -> Result<HashMap<String, Result<(Vec<Vec<String>>, Vec<String>)>>> {
+    let base_path = DOC_DIR.join("sys");
+    let databases: Vec<PathBuf> = read_dir(base_path)?
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "scroll"))
+        .map(|entry| entry.path())
+        .collect();
+
+    let results = databases.par_iter()
+        .map(|path| {
+            let mut name = path.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            let data_result = parse_db(path);
+            (name, data_result)
+        })
+        .collect();
+
+    Ok(results)
+}
+
+
+fn parse_db(path: &PathBuf) -> Result<(Vec<Vec<String>>, Vec<String>)> {
+    let content = read_to_string(path)?;
+
+    let data_tuple = content.lines()
+        .map(|line| {
+            let split = line.split(", ");
+            let first = split.clone().next().unwrap_or_default().to_string();
+            let all = split.map(String::from).collect::<Vec<String>>();
+            (all, first)
+        })
+        .collect::<(Vec<Vec<String>>, Vec<String>)>();
+
+    Ok(data_tuple)
 }

@@ -7,9 +7,6 @@ use rayon::prelude::*;
 
 
 
-pub static STATUS_HOLDER: GlobalSignal<bool> = Global::new(|| false);
-
-
 async fn marktext(filename: String) {
     Command::new("/apps/marktext")
         .arg(filename)
@@ -51,7 +48,6 @@ fn NewButton() -> Element {
     let component = match attributes {
         Ok(v) => {
             if !v.is_empty() && metadata.is_ok() {
-                *STATUS_HOLDER.write() = true;
                 rsx! {
 		    button { onclick: move |_| {
                         POPUP_GENERATOR.write().refresh();
@@ -77,7 +73,10 @@ fn Directories() -> Element {
 	    for dir_path in directories.into_iter() {
                 button {
                     class: "directory-button",
-		    onclick: move |_| FILE_DATA.write().goto(dir_path.clone()),
+		    onclick: move |_| {
+                        FILE_DATA.write().goto(dir_path.clone());
+                        POPUP_GENERATOR.write().refresh();
+                    },
 		    if let Some(dir_name) = dir_path.file_name().unwrap_or_default().to_str() {
                         "{dir_name}"
 		    }
@@ -124,9 +123,10 @@ fn FileTable() -> Element {
 		        for (i, data) in metadata.into_iter().enumerate() {
                             tr {
 			        td {
-                                    class: "table-button",
+                                    class: "marktext-cell",
                                     button {
                                         class: "marktext-button",
+                                        title: "Open file \"{ data.get(0).unwrap() }.md\" in editor",
 				        onclick: move |_| {
                                             let filepath = {
                                                 assert!(data.get(0).is_some(), "File name non existent in metadata");
@@ -146,6 +146,7 @@ fn FileTable() -> Element {
                                     }
                                 }
                                 td {
+                                    class: "action-cell",
                                     button {
                                         class: "action-button",
                                         onclick: move |_| {
@@ -210,9 +211,7 @@ pub fn Viewer() -> Element {
 	    br {}
             FileTable {}
             br {}
-            if *STATUS_HOLDER.read() {
-                Creator {}
-            }
+            Creator {}
         }
     }
 }

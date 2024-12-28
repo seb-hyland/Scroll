@@ -24,7 +24,7 @@ pub static DOC_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
 
 
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FileData {
     pub current_path: PathBuf,
     path_contents: Vec<PathBuf>,
@@ -32,7 +32,6 @@ pub struct FileData {
     pub metadata: Result<Vec<Vec<String>>, String>,
     pub attributes: Result<Vec<(String, InputField)>, String>,
     pub breadcrumbs: Vec<(PathBuf, String)>,
-    pub selected_file: PathBuf,
     pub ordering: Order,
 }
 
@@ -81,13 +80,12 @@ impl FileData {
     pub fn new() -> Self {
         let mut files = Self {
             current_path: DOC_DIR.clone(),
-            selected_file: PathBuf::new(),
             attributes: Ok(Vec::new()),
             path_contents: Vec::new(),
             directories: Vec::new(),
             metadata: Ok(Vec::new()),
             breadcrumbs: Vec::new(),
-            ordering: Order {direction: SortDirection::Decreasing, id: 0},
+            ordering: Order {direction: SortDirection::Increasing, id: 0},
         };
         files.refresh();
         files
@@ -100,11 +98,9 @@ impl FileData {
         assert!(dir_read.is_ok(), "{}", format!("The directory {} could not be read", current_dir.display()));
         let entries = dir_read.unwrap();
         self.clear();
-        for entry in entries {
-            if let Ok(entry) = entry {
-                self.path_contents.push(entry.path());
-            }
-        }
+        self.path_contents.extend(
+            entries.filter_map(|entry| entry.ok()
+                .map(|e| e.path())));
         self.directories = self.get_directories();
         self.breadcrumbs = self.get_breadcrumbs();
         self.attributes = self.get_attributes();
@@ -168,7 +164,8 @@ impl FileData {
 
     
     fn get_metadata(&self) -> Result<Vec<Vec<String>>> {
-        let objects = json_processor::get_json_hashmap(&self.current_path);
+        let db_path = self.current_path.join(".database.json");
+        let objects = json_processor::get_json_hashmap(&db_path);
         let result = objects?.par_iter()
             .map(|(_, map)| {
                 let mut struct_metadata: Vec<String> = Vec::new();

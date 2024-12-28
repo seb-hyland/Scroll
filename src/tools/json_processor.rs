@@ -9,14 +9,8 @@ use std::{
 
 
 
-pub fn get_json_hashmap(path: &PathBuf) -> Result<HashMap<String, HashMap<String, String>>> {
-        let db_path = path.join(".database.json");
-
-        if !db_path.exists() {
-            return Ok(HashMap::new());
-        }
-
-        let data = read_to_string(&db_path)?;
+pub fn get_json_hashmap(db_path: &PathBuf) -> Result<HashMap<String, HashMap<String, String>>> {
+        let data = read_to_string(db_path)?;
         let parsed_binding: Value = serde_json::from_str(&data)?;
         match parsed_binding {
             Value::Array(file_structs) => {
@@ -93,4 +87,13 @@ fn sort_json(vec: &mut Vec<Value>) {
         assert!(a.get(id).is_some() && b.get(id).is_some(), "Metadata is missing __ID tags");
         a[id].to_string().cmp(&b[id].to_string())
     });
+}
+
+pub fn rename_in_hashmap(map: &mut HashMap<String, HashMap<String, String>>, old_name: &str, new_name: &str) {
+    let item_binding = map.remove(old_name);
+    assert!(item_binding.is_some(), "Attempted to rename an item that could not be found");
+    let mut item: HashMap<String, String> = item_binding.unwrap();
+    item.insert("__ID".to_string(), new_name.to_string());
+
+    map.insert(new_name.to_string(), item);
 }

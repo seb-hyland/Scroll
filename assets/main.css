@@ -1,5 +1,8 @@
-body {
+* {
     font-family: "Inter", sans-serif;
+}
+
+body {
     background-color: var(--background-color);
     color: var(--text-color);
 }
@@ -28,6 +31,12 @@ a, button {
 
 a:hover, button:hover {
     background-color: var(--accent-2);
+}
+
+.warning-msg {
+    padding-top: 20px;
+    padding-left: 6px;
+    color: var(--accent-red-light);
 }
 
 
@@ -107,7 +116,8 @@ a:hover, button:hover {
 
 
 .directories-div {
-    margin-top: 60px;
+    margin-top: 100px;
+    margin-bottom: 50px;
 }
 
 .directory-button {
@@ -132,7 +142,7 @@ a:hover, button:hover {
     margin-top: -10px;
     margin-left: 2.5vw;
     margin-right: 2.5vw;
-    height: 85vh;
+    height: 70vh;
     overflow-y: auto;
 }
 
@@ -177,17 +187,29 @@ td {
     padding-right: 40px;
 }
 
-.table-button {
+.marktext-cell {
+    width: 250px;
     padding: 0;
     margin: 0;
 }
 
 .marktext-button {
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 15px;
     margin: 0;
 }
 
+.action-cell {
+    width: 20px;
+    padding: 5px;
+    margin: 0;
+}
+
 .action-button {
+    max-width: 20px;
+    overflow: hidden;
     text-decoration: none;
     margin: 0;
     padding: 0;
@@ -259,9 +281,9 @@ dialog::backdrop {
 }
 
 .creator-popup select, input, textarea {
-    font-family: "Inter", sans-serif;
     margin: 0;
     margin-bottom: 10px;
+    padding: 5px;
     font-weight: 400;
     font-size: 14px;
 }
@@ -294,13 +316,16 @@ dialog::backdrop {
 }
 
 .creator-popup .close-button {
-    margin-left: 0;
+    margin-left: -10px;
+    margin-right: 20px;
     padding: 10px;
     text-decoration-color: var(--accent-red);
     font-size: 16px;
 }
 
 .creator-popup .creation-button {
+    margin-left: -10px;
+    margin-right: 20px;
     padding: 10px;
     text-decoration-color: var(--accent-blue);
     font-size: 16px;
@@ -309,4 +334,9 @@ dialog::backdrop {
 .creator-popup .creation-button:hover {
     background-color: var(--accent-blue);
     text-decoration: none;
+}
+
+.renamer-div {
+    padding-top: 35px;
+    padding-bottom: 30px;
 }
