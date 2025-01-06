@@ -1,90 +1,16 @@
 use crate::{
-    FILE_DATA,
-    files::InputField,
-    file_explorer::PopupOpener,
-    tools::{json_processor, scroll_processor}
+    prelude::*,
+    db_popup::PopupOpener,
+    types::generator::*,
 };
-use dioxus::prelude::*;
-use eyre::Result;
-use std::{
-    fs::{File, write, remove_file},
-    path::PathBuf,
-};
-
-
-/// A struct that holds data while generating a new file
-/// # Fields
-/// - `filename`: the name of the file to create
-/// - `name_error`: whether `filename` is valid
-/// - `generator`: the vector of attributes to be associated with the file
-/// - `ready`: associates each attribute in `generator` with its readiness
-/// - `ok`: whether all attributes are ready; i.e., all required attributes are filled in
-#[derive(Clone, Debug)]
-pub struct FileGenerator {
-    filename: String,
-    metadata: Vec<String>,
-    state: CreatorState,
-    editing: bool,
-}
-
-pub static POPUP_GENERATOR: GlobalSignal<FileGenerator> = Global::new(|| FileGenerator::new());
-
-impl FileGenerator {
-    pub fn new() -> Self {
-        FileGenerator {
-            filename: String::new(),
-            metadata: vec![String::new(); FILE_DATA.read().attributes.as_ref().unwrap().len()],
-            state: CreatorState::Ok,
-            editing: false,
-            
-        }
-    }
-
-    pub fn set_fields(&mut self, filename: String, metadata: Vec<String>, editing: bool) {
-        self.filename = filename;
-        self.metadata = metadata;
-        self.state = CreatorState::Ok;
-        self.editing = editing;
-    }
-
-    pub fn refresh(&mut self) {
-        *self = Self::new();
-    }
-}
-
-
-
-#[derive(Clone, Debug)]
-enum CreatorState {
-    Ok,
-    Err { error: Vec<String> },
-}
-
-
-impl CreatorState {
-    pub fn file_error(&mut self) {
-        *self = CreatorState::Err { error: vec!["File Name".to_string()] };
-    }
-
-    pub fn component_error(&mut self, title: &str) {
-        match self {
-            CreatorState::Ok => {
-                *self = CreatorState::Err { error: vec![title.to_string()] };
-            },
-            CreatorState::Err { ref mut error } => {
-                error.push(title.to_string());
-            }
-        }
-    }
-}
+use std::fs::{File, write, remove_file};
 
 
 
 /// Major component for new file creation UI
 #[component]
 pub fn Creator() -> Element {
-    assert!(FILE_DATA.read().attributes.is_ok(), "Invalid attributes yet file creator called.");
-    let name = &POPUP_GENERATOR.read().filename.clone();
+    let name = POPUP_GENERATOR.read().filename.clone();
     let editing = POPUP_GENERATOR.read().editing;
 
     rsx! {
@@ -95,7 +21,7 @@ pub fn Creator() -> Element {
                 if editing {
                     div {
                         class: "metadata-div",
-                        h1 { "Updating: " u { "{ name_deser(name) }" } }
+                        h1 { "Updating: " u { "{ deserialize(&name) }" } }
                         Deleter {}
                         Renamer {}
                         br {}
@@ -130,7 +56,7 @@ fn FileNamer() -> Element {
     let message: &str = "Your file name cannot have non-alphanumeric characters (excluding '-') or be empty.";
 
     let file_path: PathBuf = {
-        let stub = FILE_DATA.read().current_path.clone().join(&name_ser(&file_name));
+        let stub = FILE_DATA.read().current_path.clone().join(&serialize(&file_name));
         if file_name.is_empty() {
             stub
         } else {
@@ -176,19 +102,9 @@ fn is_valid_name(name: &str) -> bool {
         }
 }
 
-pub fn name_ser(name: &str) -> String {
-    name.replace(" ", "_")
-}
-
-pub fn name_deser(name: &str) -> String {
-    name.replace("_", " ")
-}
-
 
 fn Form() -> Element {
-    let attribute_binding = &FILE_DATA.read().attributes;
-    assert!(&attribute_binding.is_ok(), "Invalid attributes, yet file creator called.");
-    let attributes_length = attribute_binding.as_ref().unwrap().len();
+    let attributes_length = FILE_DATA.read().attributes.len();
 
     error_checker();
 
@@ -206,11 +122,9 @@ fn Form() -> Element {
 fn error_checker() {
     let name_binding = POPUP_GENERATOR.read().filename.clone();
     let metadata_binding = POPUP_GENERATOR.read().metadata.clone();
-    let mut state_binding = &mut POPUP_GENERATOR.write().state;
+    let state_binding = &mut POPUP_GENERATOR.write().state;
 
-    let attribute_binding = &FILE_DATA.read().attributes;
-    assert!(&attribute_binding.is_ok(), "Invalid attributes, yet file creator called.");
-    let attributes = attribute_binding.as_ref().unwrap();
+    let attributes = &FILE_DATA.read().attributes;
     let required: Vec<(bool, String)> = attributes.iter()
         .map(|(title, element)| {
             (element.is_req(), title.clone())
@@ -239,10 +153,8 @@ fn error_checker() {
 
 #[component]
 fn ElementCreator(id: usize) -> Element {
-    let attributes = &FILE_DATA.read().attributes;
-    assert!(&attributes.is_ok(), "Invalid attributes, yet file creator called.");
-
-    let attr_ref = attributes.as_ref().unwrap().get(id);
+    let data_ref = &FILE_DATA.read();
+    let attr_ref = data_ref.attributes.get(id);
     assert!(&attr_ref.is_some(), "{}", format!("Invalid attribute ID: {id}"));
     let element_type = attr_ref.unwrap().1.clone();
 
@@ -287,7 +199,7 @@ fn ElementCreator(id: usize) -> Element {
                     }
                 },
                 InputField::One { id, .. } => {
-                    let options = scroll_processor::collect_options(&id).unwrap();
+                    let options = scroll_processor::db_query(&id).unwrap().1;
                     rsx! {
                         select {
                             oninput: move |event| { binding(event.value()); },
@@ -300,7 +212,7 @@ fn ElementCreator(id: usize) -> Element {
                     }
                 },
                 InputField::Multi { id, .. } => {
-                    let options = scroll_processor::collect_options(&id).unwrap();
+                    let options = scroll_processor::db_query(&id).unwrap().1;
                     rsx! {
                         select {
                             oninput: move |event| {
@@ -414,9 +326,7 @@ fn laid_in_state() -> Result<()> {
     let db_path = current_path.join(".database.json");
     assert!(db_path.exists(), "Database does not exist yet file creator called");
     
-    let attributes_binding = FILE_DATA.read().attributes.clone();
-    assert!(attributes_binding.is_ok(), "Invalid attributes, yet file creator called");
-    let attributes = attributes_binding.as_ref().unwrap();
+    let attributes = FILE_DATA.read().attributes.clone();
 
     let metadata_json_binding = json_processor::get_json_hashmap(&db_path);
     assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
@@ -424,7 +334,7 @@ fn laid_in_state() -> Result<()> {
     let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(metadata_json);
 
     let mut new_filename = context.read().filename.clone();
-    new_filename = name_ser(&new_filename);
+    new_filename = serialize(&new_filename);
     let new_metadata = &context.read().metadata;
 
     let mut new_vector = vec![("__ID".to_string(), new_filename.clone())];
@@ -451,16 +361,14 @@ fn refreeze() -> Result<()> {
     let db_path = current_path.join(".database.json");
     assert!(db_path.exists(), "Database does not exist yet file creator called");
     
-    let attributes_binding = FILE_DATA.read().attributes.clone();
-    assert!(attributes_binding.is_ok(), "Invalid attributes, yet file creator called");
-    let attributes = attributes_binding.as_ref().unwrap();
+    let attributes = FILE_DATA.read().attributes.clone();
 
     let metadata_json_binding = json_processor::get_json_hashmap(&db_path);
     assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
     let mut metadata_json = metadata_json_binding.unwrap();
 
     let filename_binding = &context.filename;
-    let new_filename = name_ser(filename_binding);
+    let new_filename = serialize(filename_binding);
     let new_metadata = &context.metadata;
 
     let mut new_vector = vec![("__ID".to_string(), new_filename.clone())];
@@ -519,7 +427,7 @@ fn fall_out_of_window() -> Result<()> {
     assert!(db_path.exists(), "Database does not exist yet file creator called");
     
     let filename_binding = &context.filename;
-    let filename = &name_ser(filename_binding);
+    let filename = &serialize(filename_binding);
 
     let metadata_json_binding = json_processor::get_json_hashmap(&db_path);
     assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
@@ -557,10 +465,10 @@ dialog.showModal();"#);
 
 #[component]
 fn RenamerPopup(original: String) -> Element {
-    let mut new_name: Signal<String> = use_signal(|| name_deser(&original));
+    let mut new_name: Signal<String> = use_signal(|| deserialize(&original));
     let original_copy = original.clone();
     let new_path: PathBuf = {
-        let stub = FILE_DATA.read().current_path.clone().join(&name_ser(&new_name.read()));
+        let stub = FILE_DATA.read().current_path.clone().join(&serialize(&new_name.read()));
         if new_name.read().is_empty() {
             stub
         } else {
@@ -636,14 +544,14 @@ fn rename(old_name: String, new_name: String) -> Result<()> {
     let metadata_json_binding = json_processor::get_json_hashmap(&db_path);
     assert!(metadata_json_binding.is_ok(), "Invalid metadata, yet file creator called");
     let mut metadata_json = metadata_json_binding.unwrap();
-    json_processor::rename_in_hashmap(&mut metadata_json, &old_name, &name_ser(&new_name));
+    json_processor::rename_in_hashmap(&mut metadata_json, &old_name, &serialize(&new_name));
 
     let mut metadata: Vec<Vec<(String, String)>> = json_processor::hashmap_to_vec(&metadata_json);
     let mut json_array = json_processor::vec_to_json(&metadata);
     let json_string = serde_json::to_string_pretty(&json_array)?;
 
     let old_path = current_path.join(old_name).with_extension("md");
-    let new_path = current_path.join(name_ser(&new_name)).with_extension("md");
+    let new_path = current_path.join(serialize(&new_name)).with_extension("md");
 
     std::fs::rename(old_path, new_path)?;
     write(db_path, json_string)?;

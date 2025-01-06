@@ -1,12 +1,11 @@
 #![allow(non_snake_case)]
-use crate::Route;
-use crate::FILE_DATA;
-use crate::files::DOC_DIR;
-use dioxus::prelude::*;
+use crate::prelude::*;
+
 
 pub fn Home() -> Element {
-    let nav = navigator();
-    let base = &DOC_DIR;
+    let base = DOC_DIR.read().unwrap().clone();
+    let wetlab_path = base.join("wet-lab");
+    let drylab_path = base.join("dry-lab");
     rsx! {
         div {
             class: "homepage",
@@ -15,13 +14,11 @@ pub fn Home() -> Element {
             div {
                 class: "navigation-buttons",
                 button { onclick: move |_| {
-                    FILE_DATA.write().goto(base.join("wet-lab"));
-                    nav.push(Route::Viewer {});
+                    FILE_DATA.write().goto(&wetlab_path);
                 }, "Wet Lab" }
 
                 button { onclick: move |_| {
-                    FILE_DATA.write().goto(base.join("dry-lab"));
-                    nav.push(Route::Viewer {});
+                    FILE_DATA.write().goto(&drylab_path);
                 }, "Dry Lab" }
                 
             }
